@@ -1,14 +1,17 @@
 import streamlit as st
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Configuración simulada del cliente. 
 # Esto podría cargarse dinámicamente basándose en un parámetro de URL o login.
 CLIENT_CONFIG = {
     "client_name": "Olivia",
-    "logo_path": "images/logo.png", # Logo desde carpeta local
+    "logo_path": os.path.join(BASE_DIR, "images", "logo.png"), # Logo desde carpeta local
     "background_url": "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2072&auto=format&fit=crop",
     "primary_color": "#00a8e8",
     "ai_model": "gemini-2.0-flash", # Modelo configurable (ej. gemini-2.0-flash, gemini-1.5-flash)
-    "knowledge_base_folder": "knowledge_base", # Carpeta con documentos fuente (txt, md, etc.)
+    "knowledge_base_folder": os.path.join(BASE_DIR, "knowledge_base"), # Carpeta con documentos fuente (txt, md, etc.)
     "system_prompt": """
         ### ROL Y PROPÓSITO
 Eres el coach en {client_name}, un mentor experto, exigente y estratégico. Tu objetivo no es dar respuestas teóricas, sino entrenar al usuario (empleado o cliente) para que aplique los conceptos contenidos en tu [CONOCIMIENTO ADJUNTO].
@@ -62,6 +65,16 @@ OPCIÓN B: "Consultorio Real" (El usuario te cuenta un problema real actual y t�
 ### INICIO
 Espera a que el usuario te salude para comenzar la FASE 1.
     """
+}
+
+# Configuración de Seguridad y Persistencia
+SECURITY_CONFIG = {
+    "enable_auth": True, # Cambiar a False para deshabilitar la seguridad
+    "users": {
+        "admin": "admin123",
+        "empleado": "olivia2024"
+    },
+    "data_file": "user_progress.json"
 }
 
 def apply_custom_styles():

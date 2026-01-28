@@ -10,7 +10,7 @@ except ImportError:
 import streamlit as st
 import json
 import os
-from config import CLIENT_CONFIG
+from config import CLIENT_CONFIG, SECURITY_CONFIG
 
 # Definición de Cinturones (Gamificación)
 BELTS = [
@@ -96,7 +96,7 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
 
     prompt = f"""
     Actúa como un generador de exámenes experto y dinámico.
-    Tu objetivo es crear un test de evaluación adaptado a los contenidos proporcionados.
+    Tu objetivo es crear un test de evaluación de 5 preguntas adaptado a los contenidos proporcionados.
     
     BASE DE CONOCIMIENTO (CONTENIDO FUENTE):
     {knowledge_context if knowledge_context.strip() else "No hay documentos cargados. Usa conocimiento general."}
@@ -262,3 +262,38 @@ def generate_dynamic_topics(knowledge_context):
     except Exception as e:
         print(f"Error generando temas dinámicos: {e}")
         return default_topics
+
+def check_credentials(username, password):
+    """Valida las credenciales contra la configuración de seguridad."""
+    users = SECURITY_CONFIG.get("users", {})
+    return username in users and users[username] == password
+
+def load_user_progress(username):
+    """Carga la puntuación guardada del usuario desde el fichero."""
+    file_path = SECURITY_CONFIG.get("data_file", "user_progress.json")
+    if not os.path.exists(file_path):
+        return 0
+    try:
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+            # Devuelve el score si existe, sino 0
+            return data.get(username, {}).get("score", 0)
+    except Exception:
+        return 0
+
+def save_user_progress(username, score):
+    """Guarda la puntuación actual del usuario en el fichero."""
+    file_path = SECURITY_CONFIG.get("data_file", "user_progress.json")
+    data = {}
+    
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+            
+    data[username] = {"score": score}
+    
+    with open(file_path, 'w') as f:
+        json.dump(data, f, indent=4)

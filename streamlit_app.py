@@ -1,7 +1,7 @@
 import streamlit as st
 import os
-from config import CLIENT_CONFIG, apply_custom_styles
-from logic import get_current_belt, generate_quiz_questions, evaluate_quiz, get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics
+from config import CLIENT_CONFIG, SECURITY_CONFIG, apply_custom_styles
+from logic import get_current_belt, generate_quiz_questions, evaluate_quiz, get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, check_credentials, load_user_progress, save_user_progress
 
 # --- Configuración de Página ---
 st.set_page_config(page_title=CLIENT_CONFIG["client_name"], page_icon="🎓")
@@ -18,13 +18,37 @@ if "quiz_active" not in st.session_state:
     st.session_state.quiz_active = False
 if "current_questions" not in st.session_state:
     st.session_state.current_questions = []
-if "knowledge_base" not in st.session_state:
+if "knowledge_base" not in st.session_state or not st.session_state.knowledge_base:
     # Cargar documentos al inicio de la sesión
-    st.session_state.knowledge_base = load_knowledge_base(CLIENT_CONFIG.get("knowledge_base_folder", "knowledge_base"))
+    kb_path = CLIENT_CONFIG.get("knowledge_base_folder", "knowledge_base")
+    # Asegurar ruta absoluta para evitar errores de contexto tras el login
+    if not os.path.isabs(kb_path):
+        kb_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), kb_path)
+    st.session_state.knowledge_base = load_knowledge_base(kb_path)
 if "dynamic_roles" not in st.session_state:
     st.session_state.dynamic_roles = []
 if "dynamic_topics" not in st.session_state:
     st.session_state.dynamic_topics = []
+
+# --- Control de Acceso (Login) ---
+if SECURITY_CONFIG.get("enable_auth", False):
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+        
+    if not st.session_state.logged_in:
+        st.title("🔐 Acceso a Formación")
+        with st.form("login_form"):
+            u = st.text_input("Usuario")
+            p = st.text_input("Contraseña", type="password")
+            if st.form_submit_button("Entrar"):
+                if check_credentials(u, p):
+                    st.session_state.logged_in = True
+                    st.session_state.username = u
+                    st.session_state.score = load_user_progress(u) # Cargar nivel guardado
+                    st.rerun()
+                else:
+                    st.error("Credenciales incorrectas")
+        st.stop() # Detiene la ejecución si no está logueado
 
 # --- Sidebar: Perfil y Navegación ---
 with st.sidebar:
@@ -33,6 +57,19 @@ with st.sidebar:
     else:
         st.warning("⚠️ Logo no encontrado en images/logo.png")
     st.title(CLIENT_CONFIG["client_name"])
+    
+    if st.session_state.get("logged_in"):
+        st.caption(f"Usuario: {st.session_state.username}")
+        if st.button("Cerrar Sesión"):
+            st.session_state.logged_in = False
+            st.session_state.username = None
+            st.rerun()
+            
+    # Indicador de estado de la Base de Conocimiento
+    if st.session_state.knowledge_base:
+        st.success(f"📚 Base de conocimiento conectada")
+    else:
+        st.warning("⚠️ Base de conocimiento vacía")
     
     # Generar roles dinámicos si no existen
     if not st.session_state.dynamic_roles:
@@ -138,6 +175,9 @@ elif mode == "Dojo (Ponerse a prueba)":
             else:
                 points, results = evaluate_quiz(st.session_state.current_questions, user_answers)
                 st.session_state.score += points
+                # Guardar progreso automáticamente
+                if st.session_state.get("username"):
+                    save_user_progress(st.session_state.username, st.session_state.score)
                 st.session_state.quiz_active = False
                 st.session_state.current_questions = [] # Limpiar
                 
