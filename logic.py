@@ -67,7 +67,7 @@ def load_knowledge_base(folder_path):
                     with open(file_path, 'r', encoding='utf-8') as f:
                         context_text += f"\n\n--- Documento: {filename} ---\n{f.read()}"
                 except Exception as e:
-                    st.warning(f"No se pudo leer {filename}: {e}")
+                    print(f"Advertencia: No se pudo leer {filename}: {e}")
             elif filename.endswith('.pdf') and pypdf:
                 try:
                     reader = pypdf.PdfReader(file_path)
@@ -76,7 +76,7 @@ def load_knowledge_base(folder_path):
                         text += page.extract_text() + "\n"
                     context_text += f"\n\n--- Documento PDF: {filename} ---\n{text}"
                 except Exception as e:
-                    st.warning(f"No se pudo leer PDF {filename}: {e}")
+                    print(f"Advertencia: No se pudo leer PDF {filename}: {e}")
     return context_text
 
 def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
