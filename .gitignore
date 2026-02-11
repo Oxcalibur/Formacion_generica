@@ -1,4 +1,9 @@
-# Ignorar archivos de secretos y caché
-.streamlit/secrets.toml
+# Archivos de entorno virtual de Python
+.venv/
+
+# Archivos de caché de Python
 __pycache__/
 *.pyc
+
+# Script de utilidad local, no debe ser parte del repositorio.
+create_client.py

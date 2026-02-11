@@ -1,6 +1,6 @@
 {
-    "empleado": {
-        "active_sessions": 1,
-        "score": 80
+    "admin": {
+        "score": 0,
+        "active_sessions": 0
     }
 }
