@@ -33,6 +33,24 @@ def get_current_belt(score):
             break
     return current
 
+def get_next_belt_data(score):
+    """Calcula el progreso relativo hacia el siguiente nivel."""
+    current_belt = get_current_belt(score)
+    next_belt = None
+    
+    for belt in BELTS:
+        if belt["threshold"] > current_belt["threshold"]:
+            next_belt = belt
+            break
+            
+    if next_belt:
+        # Calcular porcentaje completado del nivel actual
+        range_span = next_belt["threshold"] - current_belt["threshold"]
+        progress = (score - current_belt["threshold"]) / range_span
+        return {"next_name": next_belt["name"], "threshold": next_belt["threshold"], "progress": progress}
+    
+    return {"next_name": "Maestría Total", "threshold": score, "progress": 1.0}
+
 def init_gemini():
     """Inicializa la API de Gemini. Requiere st.secrets o variable de entorno."""
     if genai is None:
@@ -272,17 +290,20 @@ def load_user_progress(username):
     """Carga la puntuación guardada del usuario desde el fichero."""
     file_path = SECURITY_CONFIG.get("data_file", "user_progress.json")
     if not os.path.exists(file_path):
-        return 0
+        return {"score": 0, "active_sessions": 0}
     try:
         with open(file_path, 'r') as f:
             data = json.load(f)
-            # Devuelve el score si existe, sino 0
-            return data.get(username, {}).get("score", 0)
+            user_data = data.get(username, {})
+            return {
+                "score": user_data.get("score", 0),
+                "active_sessions": user_data.get("active_sessions", 0)
+            }
     except Exception:
-        return 0
+        return {"score": 0, "active_sessions": 0}
 
-def save_user_progress(username, score):
-    """Guarda la puntuación actual del usuario en el fichero."""
+def save_user_progress(username, score=None, increment_session=False):
+    """Guarda la puntuación y/o incrementa el contador de sesiones activas."""
     file_path = SECURITY_CONFIG.get("data_file", "user_progress.json")
     data = {}
     
@@ -293,7 +314,87 @@ def save_user_progress(username, score):
         except Exception:
             data = {}
             
-    data[username] = {"score": score}
+    user_data = data.get(username, {})
+    
+    if score is not None:
+        user_data["score"] = score
+        
+    if increment_session:
+        user_data["active_sessions"] = user_data.get("active_sessions", 0) + 1
+    
+    data[username] = user_data
     
     with open(file_path, 'w') as f:
         json.dump(data, f, indent=4)
+
+def calculate_roi_metrics(time_saved_per_interaction, cost_per_hour, participation_threshold=10):
+    """Calcula las métricas de ROI basado en la fórmula de Olivia España."""
+    file_path = SECURITY_CONFIG.get("data_file", "user_progress.json")
+    if not os.path.exists(file_path):
+        return None
+    
+    try:
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+    except Exception:
+        return None
+
+    # Excluir admin del cálculo para medir solo usuarios reales
+    users = [u for k, u in data.items() if k != 'admin']
+    N = len(users)
+    
+    if N == 0:
+        return {"N": 0, "P": 0, "F": 0, "AH_op": 0, "Me": 1.0, "Total_Value": 0.0, "active_count": 0}
+
+    # P: Tasa de participación (usuarios con >= 10 usos)
+    # Usamos 'active_sessions' como métrica de uso
+    active_users = [u for u in users if u.get("active_sessions", 0) >= participation_threshold]
+    n_active = len(active_users)
+    P = n_active / N
+    
+    # F: Frecuencia media (de los usuarios activos)
+    if n_active > 0:
+        avg_freq = sum(u.get("active_sessions", 0) for u in active_users) / n_active
+    else:
+        avg_freq = 0
+        
+    # AH_op = (N * P) * (F * Ts)
+    AH_op = (N * P) * (avg_freq * time_saved_per_interaction)
+    
+    # Me: Multiplicador de Evolución
+    # Promedio del multiplicador de los usuarios activos
+    max_level_idx = len(BELTS) - 1
+    if max_level_idx < 1: max_level_idx = 1
+    
+    sum_me = 0
+    if n_active > 0:
+        for u in active_users:
+            score = u.get("score", 0)
+            # Encontrar índice del cinturón (0 a 6)
+            idx = 0
+            for i, belt in enumerate(BELTS):
+                if score >= belt["threshold"]:
+                    idx = i
+                else:
+                    break
+            
+            # Fórmula: 1 + (Nivel Actual - 1) / Nivel Máximo
+            # Dado que idx es base 0, equivale a (Nivel Actual - 1)
+            me_user = 1 + (idx / max_level_idx)
+            sum_me += me_user
+        Me = sum_me / n_active
+    else:
+        Me = 1.0
+        
+    # Valor Total
+    total_value = (AH_op * Me) * cost_per_hour
+    
+    return {
+        "N": N,
+        "P": P,
+        "F": avg_freq,
+        "AH_op": AH_op,
+        "Me": Me,
+        "Total_Value": total_value,
+        "active_count": n_active
+    }

@@ -74,7 +74,7 @@ SECURITY_CONFIG = {
         "admin": "admin123",
         "empleado": "olivia2024"
     },
-    "data_file": "user_progress.json"
+    "data_file": os.path.join(BASE_DIR, "user_progress.json")
 }
 
 def apply_custom_styles():

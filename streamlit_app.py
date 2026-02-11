@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from config import CLIENT_CONFIG, SECURITY_CONFIG, apply_custom_styles
-from logic import get_current_belt, generate_quiz_questions, evaluate_quiz, get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, check_credentials, load_user_progress, save_user_progress
+from logic import get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, check_credentials, load_user_progress, save_user_progress, calculate_roi_metrics
 
 # --- Configuración de Página ---
 st.set_page_config(page_title=CLIENT_CONFIG["client_name"], page_icon="🎓")
@@ -12,6 +12,10 @@ if "user_role" not in st.session_state:
     st.session_state.user_role = "Estudiante"
 if "score" not in st.session_state:
     st.session_state.score = 0
+if "active_sessions" not in st.session_state:
+    st.session_state.active_sessions = 0
+if "session_interaction_recorded" not in st.session_state:
+    st.session_state.session_interaction_recorded = False
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "quiz_active" not in st.session_state:
@@ -44,7 +48,9 @@ if SECURITY_CONFIG.get("enable_auth", False):
                 if check_credentials(u, p):
                     st.session_state.logged_in = True
                     st.session_state.username = u
-                    st.session_state.score = load_user_progress(u) # Cargar nivel guardado
+                    user_data = load_user_progress(u) # Cargar datos guardados
+                    st.session_state.score = user_data["score"]
+                    st.session_state.active_sessions = user_data["active_sessions"]
                     st.rerun()
                 else:
                     st.error("Credenciales incorrectas")
@@ -61,8 +67,12 @@ with st.sidebar:
     if st.session_state.get("logged_in"):
         st.caption(f"Usuario: {st.session_state.username}")
         if st.button("Cerrar Sesión"):
-            st.session_state.logged_in = False
-            st.session_state.username = None
+            # Limpiar variables de sesión para asegurar que el próximo usuario cargue datos limpios
+            keys_to_reset = ["logged_in", "username", "score", "active_sessions", "chat_history", 
+                             "quiz_active", "current_questions", "session_interaction_recorded", "user_role"]
+            for key in keys_to_reset:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
             
     # Indicador de estado de la Base de Conocimiento
@@ -89,13 +99,25 @@ with st.sidebar:
     
     # Estado del Cinturón
     belt = get_current_belt(st.session_state.score)
+    progress_data = get_next_belt_data(st.session_state.score)
+    
     st.markdown(f"### 🥋 Nivel Actual")
     st.markdown(f"**{belt['name']}**")
     st.progress(min(1.0, st.session_state.score / (belt['threshold'] + 200))) # Barra de progreso visual
-    st.caption(f"Puntos: {st.session_state.score}")
+    st.caption(f"Puntos: {st.session_state.score} | Sesiones: {st.session_state.active_sessions}")
+    st.progress(min(1.0, max(0.0, progress_data["progress"]))) # Barra de progreso visual
+    
+    if progress_data["progress"] < 1.0:
+        st.caption(f"Próximo: {progress_data['next_name']} ({st.session_state.score}/{progress_data['threshold']} pts)")
+    else:
+        st.caption(f"¡Máximo nivel alcanzado! ({st.session_state.score} pts)")
     
     st.divider()
-    mode = st.radio("Navegación", ["Asistente Formativo", "Dojo (Ponerse a prueba)"])
+    
+    nav_options = ["Asistente Formativo", "Dojo (Ponerse a prueba)"]
+    if st.session_state.get("username") == "admin":
+        nav_options.append("ROI Dashboard (Admin)")
+    mode = st.radio("Navegación", nav_options)
 
 # --- Pantalla 1: Asistente Formativo (Chat) ---
 if mode == "Asistente Formativo":
@@ -109,6 +131,12 @@ if mode == "Asistente Formativo":
 
     # Input de usuario
     if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
+        # Registrar interacción si es la primera de la sesión
+        if st.session_state.get("logged_in") and not st.session_state.session_interaction_recorded:
+            save_user_progress(st.session_state.username, increment_session=True)
+            st.session_state.active_sessions += 1
+            st.session_state.session_interaction_recorded = True
+
         # Guardar y mostrar mensaje usuario
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -177,7 +205,11 @@ elif mode == "Dojo (Ponerse a prueba)":
                 st.session_state.score += points
                 # Guardar progreso automáticamente
                 if st.session_state.get("username"):
-                    save_user_progress(st.session_state.username, st.session_state.score)
+                    increment = not st.session_state.session_interaction_recorded
+                    save_user_progress(st.session_state.username, score=st.session_state.score, increment_session=increment)
+                    if increment:
+                        st.session_state.active_sessions += 1
+                        st.session_state.session_interaction_recorded = True
                 st.session_state.quiz_active = False
                 st.session_state.current_questions = [] # Limpiar
                 
@@ -193,3 +225,45 @@ elif mode == "Dojo (Ponerse a prueba)":
                 
                 if st.button("Volver al Dojo"):
                     st.rerun()
+
+# --- Pantalla 3: ROI Dashboard (Admin) ---
+elif mode == "ROI Dashboard (Admin)":
+    st.header("💰 Calculadora de ROI - Olivia España")
+    st.markdown("Análisis de impacto económico basado en adopción y evolución de conocimiento.")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        ts = st.number_input("Tiempo ahorrado por interacción (h)", value=0.25, step=0.05, format="%.2f")
+    with col2:
+        ch = st.number_input("Coste hora promedio (€)", value=50.0, step=5.0, format="%.2f")
+    with col3:
+        threshold = st.number_input("Mín. sesiones para ROI", value=10, min_value=1, step=1)
+        
+    metrics = calculate_roi_metrics(ts, ch, threshold)
+    
+    if metrics:
+        st.divider()
+        
+        # 1. Ahorro Operativo
+        st.subheader("1. Ahorro Operativo ($AH_{op}$)")
+        st.latex(r"AH_{op} = (N \cdot P) \cdot (F \cdot T_s)")
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Usuarios (N)", metrics["N"])
+        c2.metric("Tasa Part. (P)", f"{metrics['P']:.1%}", help=f"{metrics['active_count']} usuarios con >= {threshold} usos")
+        c3.metric("Frecuencia (F)", f"{metrics['F']:.1f}", help="Media de sesiones de usuarios activos")
+        c4.metric("Ahorro Base", f"{metrics['AH_op']:.1f} h")
+        
+        # 2. Multiplicador
+        st.subheader("2. Multiplicador de Evolución ($M_e$)")
+        st.latex(r"M_e = 1 + \left( \frac{\text{Nivel Actual} - 1}{\text{Nivel Máximo}} \right)")
+        st.metric("Multiplicador Promedio", f"x{metrics['Me']:.2f}", help="Basado en el nivel de cinturón de los usuarios activos")
+        
+        # 3. Total
+        st.subheader("3. Valor Total Generado")
+        st.latex(r"\text{Valor} = (AH_{op} \cdot M_e) \cdot C_h")
+        
+        final_val = metrics["Total_Value"]
+        st.metric("Ahorro Económico Total", f"{final_val:,.2f} €", delta="ROI Estimado")
+    else:
+        st.warning("No hay datos de usuarios suficientes para calcular el ROI.")
