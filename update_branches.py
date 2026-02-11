@@ -5,8 +5,8 @@ import sys
 # Escribe aquí los nombres EXACTOS de las ramas de tus clientes activos.
 # Añade o quita líneas según necesites.
 CLIENT_BRANCHES = [
-    "demo-liderazgo",
-     "demo-change",
+    "cliente-olivia",
+     "demo-liderazgo",
     # "cliente-repsol",
 ]
 # =================================================

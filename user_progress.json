@@ -2,5 +2,25 @@
     "admin": {
         "score": 0,
         "active_sessions": 0
+    },
+    "empleado1": {
+        "score": 0,
+        "active_sessions": 0
+    },
+    "empleado2": {
+        "score": 0,
+        "active_sessions": 0
+    },
+    "empleado3": {
+        "score": 0,
+        "active_sessions": 0
+    },
+    "empleado4": {
+        "score": 0,
+        "active_sessions": 0
+    },
+    "empleado5": {
+        "score": 0,
+        "active_sessions": 0
     }
 }

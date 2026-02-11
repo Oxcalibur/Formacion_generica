@@ -7,3 +7,4 @@ __pycache__/
 
 # Script de utilidad local, no debe ser parte del repositorio.
 create_client.py
+update_branches.py

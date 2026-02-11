@@ -72,7 +72,11 @@ SECURITY_CONFIG = {
     "enable_auth": True, # Cambiar a False para deshabilitar la seguridad
     "users": {
         "admin": "admin123",
-        "empleado": "olivia2024"
+        "empleado1": "olivia2024",
+        "empleado2": "olivia2024",
+        "empleado3": "olivia2024",
+        "empleado4": "olivia2024",
+        "empleado5": "olivia2024"
     },
     "data_file": os.path.join(BASE_DIR, "user_progress.json")
 }
