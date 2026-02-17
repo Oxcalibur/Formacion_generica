@@ -1,7 +1,8 @@
 import streamlit as st
 import os
 from config import CLIENT_CONFIG, SECURITY_CONFIG, apply_custom_styles
-from logic import get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, check_credentials, load_user_progress, save_user_progress, calculate_roi_metrics
+from logic import get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, calculate_roi_metrics
+from auth import auth_manager
 
 # --- Configuración de Página ---
 st.set_page_config(page_title=CLIENT_CONFIG["client_name"], page_icon="🎓")
@@ -45,10 +46,10 @@ if SECURITY_CONFIG.get("enable_auth", False):
             u = st.text_input("Usuario")
             p = st.text_input("Contraseña", type="password")
             if st.form_submit_button("Entrar"):
-                if check_credentials(u, p):
+                if auth_manager.authenticate(u, p):
                     st.session_state.logged_in = True
                     st.session_state.username = u
-                    user_data = load_user_progress(u) # Cargar datos guardados
+                    user_data = auth_manager.get_user_progress(u) # Cargar datos guardados
                     st.session_state.score = user_data["score"]
                     st.session_state.active_sessions = user_data["active_sessions"]
                     st.rerun()
@@ -133,7 +134,7 @@ if mode == "Asistente Formativo":
     if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
         # Registrar interacción si es la primera de la sesión
         if st.session_state.get("logged_in") and not st.session_state.session_interaction_recorded:
-            save_user_progress(st.session_state.username, increment_session=True)
+            auth_manager.update_user_progress(st.session_state.username, increment_session=True)
             st.session_state.active_sessions += 1
             st.session_state.session_interaction_recorded = True
 
@@ -206,7 +207,7 @@ elif mode == "Dojo (Ponerse a prueba)":
                 # Guardar progreso automáticamente
                 if st.session_state.get("username"):
                     increment = not st.session_state.session_interaction_recorded
-                    save_user_progress(st.session_state.username, score=st.session_state.score, increment_session=increment)
+                    auth_manager.update_user_progress(st.session_state.username, score=st.session_state.score, increment_session=increment)
                     if increment:
                         st.session_state.active_sessions += 1
                         st.session_state.session_interaction_recorded = True

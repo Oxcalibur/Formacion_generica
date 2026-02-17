@@ -70,10 +70,6 @@ Espera a que el usuario te salude para comenzar la FASE 1.
 # Configuración de Seguridad y Persistencia
 SECURITY_CONFIG = {
     "enable_auth": True, # Cambiar a False para deshabilitar la seguridad
-    "users": {
-        "admin": "admin123",
-        "empleado": "olivia2024"
-    },
     "data_file": os.path.join(BASE_DIR, "user_progress.json")
 }
 

@@ -281,52 +281,6 @@ def generate_dynamic_topics(knowledge_context):
         print(f"Error generando temas dinámicos: {e}")
         return default_topics
 
-def check_credentials(username, password):
-    """Valida las credenciales contra la configuración de seguridad."""
-    users = SECURITY_CONFIG.get("users", {})
-    return username in users and users[username] == password
-
-def load_user_progress(username):
-    """Carga la puntuación guardada del usuario desde el fichero."""
-    file_path = SECURITY_CONFIG.get("data_file", "user_progress.json")
-    if not os.path.exists(file_path):
-        return {"score": 0, "active_sessions": 0}
-    try:
-        with open(file_path, 'r') as f:
-            data = json.load(f)
-            user_data = data.get(username, {})
-            return {
-                "score": user_data.get("score", 0),
-                "active_sessions": user_data.get("active_sessions", 0)
-            }
-    except Exception:
-        return {"score": 0, "active_sessions": 0}
-
-def save_user_progress(username, score=None, increment_session=False):
-    """Guarda la puntuación y/o incrementa el contador de sesiones activas."""
-    file_path = SECURITY_CONFIG.get("data_file", "user_progress.json")
-    data = {}
-    
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
-            
-    user_data = data.get(username, {})
-    
-    if score is not None:
-        user_data["score"] = score
-        
-    if increment_session:
-        user_data["active_sessions"] = user_data.get("active_sessions", 0) + 1
-    
-    data[username] = user_data
-    
-    with open(file_path, 'w') as f:
-        json.dump(data, f, indent=4)
-
 def calculate_roi_metrics(time_saved_per_interaction, cost_per_hour, participation_threshold=10):
     """Calcula las métricas de ROI basado en la fórmula de Olivia España."""
     file_path = SECURITY_CONFIG.get("data_file", "user_progress.json")

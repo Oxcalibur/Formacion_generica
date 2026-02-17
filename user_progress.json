@@ -1,6 +1,13 @@
 {
     "empleado": {
         "active_sessions": 1,
-        "score": 80
+        "score": 80,
+        "password_hash": "e5a65f204b7d3d799d43c0dbf70e940264b157461d99bd9351843c0e3f64aa19"
+    },
+    "admin": {
+        "password_hash": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+        "score": 0,
+        "active_sessions": 0,
+        "role": "admin"
     }
 }
