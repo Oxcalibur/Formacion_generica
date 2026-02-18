@@ -1,11 +1,6 @@
 import os
 import subprocess
 import sys
-import json
-
-# ================= CONFIGURACIÓN =================
-JSON_FILE = "user_progress.json"
-# =================================================
 
 def run_command(command):
     """Ejecuta comandos de Git silenciosamente salvo error."""
@@ -17,7 +12,7 @@ def run_command(command):
         sys.exit(1)
 
 def crear_cliente():
-    print("\n✨ --- ASISTENTE DE CREACIÓN DE NUEVO CLIENTE (SOLO RAMA) --- ✨\n")
+    print("\n✨ --- ASISTENTE DE CREACIÓN DE NUEVA INSTANCIA PARA CLIENTE --- ✨\n")
 
     # 1. DATOS DEL CLIENTE
     nombre_raw = input("1. Nombre del cliente (ej: Iberia, Demo Liderazgo): ")
@@ -38,28 +33,22 @@ def crear_cliente():
     # El -B fuerza la creación o reseteo si ya existía localmente
     run_command(f"git checkout -B {rama_cliente}")
 
-    # 3. RESETEAR DATOS
-    print("\n🧹 --- LIMPIEZA DE DATOS ---")
-    # Resetear JSON de progreso para que el nuevo cliente empiece de 0
-    with open(JSON_FILE, 'w', encoding='utf-8') as f:
-        initial_data = {"admin": {"score": 0, "active_sessions": 0}}
-        json.dump(initial_data, f, indent=4)
-    print(f"   ✅ Archivo '{JSON_FILE}' reseteado.")
-
-    # 4. SUBIDA A LA NUBE
+    # 3. SUBIDA A LA NUBE
     print("\n🚀 --- SUBIENDO A GITHUB ---")
     run_command("git add .")
     run_command(f'git commit -m "Alta cliente (Rama): {nombre_raw}"')
     
     print("   ⏳ Empujando a la nube...")
     run_command(f"git push --force --set-upstream origin {rama_cliente}")
-    print("   ✅ Subida completada.")
+    print("   ✅ Rama creada y subida a GitHub.")
 
-    # 5. INSTRUCCIONES FINALES
+    # 4. INSTRUCCIONES FINALES
     print(f"\n🎉 --- ¡ÉXITO! RAMA '{rama_cliente}' CREADA ---")
-    print("Siguientes pasos:")
-    print(f"1. Sube tus archivos (PDFs, Logo) directamente a GitHub en la rama '{rama_cliente}'.")
-    print(f"2. Ve a tu plataforma de deploy y despliega esta rama.")
+    print("\n📋 ACCIONES REQUERIDAS:")
+    print("1. Ve a Google Drive y crea una **NUEVA HOJA DE CÁLCULO** para este cliente.")
+    print("2. Dentro de esa hoja, crea una pestaña (worksheet) llamada exactamente `Users`.")
+    print(f"3. Comparte la hoja con el rol de 'Editor' a tu email de servicio: `asistente-ia@gen-lang-client-0006409633.iam.gserviceaccount.com`")
+    print(f"4. Al desplegar la rama '{rama_cliente}', configura el secreto `spreadsheet` con la URL de esta **NUEVA** hoja.")
 
 if __name__ == "__main__":
     crear_cliente()

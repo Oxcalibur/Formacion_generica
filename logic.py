@@ -7,6 +7,11 @@ try:
     import pypdf
 except ImportError:
     pypdf = None
+try:
+    from streamlit_gsheets import GSheetsConnection
+except ImportError:
+    GSheetsConnection = None
+import pandas as pd
 import streamlit as st
 import json
 import os
@@ -283,14 +288,26 @@ def generate_dynamic_topics(knowledge_context):
 
 def calculate_roi_metrics(time_saved_per_interaction, cost_per_hour, participation_threshold=10):
     """Calcula las métricas de ROI basado en la fórmula de Olivia España."""
-    file_path = SECURITY_CONFIG.get("data_file", "user_progress.json")
-    if not os.path.exists(file_path):
-        return None
-    
+    data = {}
     try:
-        with open(file_path, 'r') as f:
-            data = json.load(f)
+        if GSheetsConnection:
+            conn = st.connection("gsheets", type=GSheetsConnection)
+            df = conn.read(worksheet="Users", ttl=0)
+            
+            url = None
+            try:
+                url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+            except Exception:
+                pass
+            
+            df = conn.read(spreadsheet=url, worksheet="Users", ttl=0) if url else conn.read(worksheet="Users", ttl=0)
+            
+            if not df.empty and "username" in df.columns:
+                data = df.set_index("username").to_dict(orient="index")
     except Exception:
+        pass
+
+    if not data:
         return None
 
     # Excluir admin del cálculo para medir solo usuarios reales

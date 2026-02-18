@@ -1,11 +1,16 @@
 import hashlib
 import json
 import os
+import pandas as pd
+import streamlit as st
+try:
+    from streamlit_gsheets import GSheetsConnection
+except ImportError:
+    GSheetsConnection = None
 from config import SECURITY_CONFIG
 
 class AuthManager:
     def __init__(self):
-        self.file_path = SECURITY_CONFIG.get("data_file", "user_progress.json")
         self._initialize_db()
 
     def _hash_password(self, password):
@@ -13,19 +18,16 @@ class AuthManager:
         return hashlib.sha256(password.encode()).hexdigest()
 
     def _initialize_db(self):
-        """Crea el archivo con usuarios por defecto o actualiza credenciales."""
+        """Crea la hoja con usuarios por defecto o actualiza credenciales."""
         # Definir credenciales base
         default_creds = {
             "admin": "admin123",
             "empleado": "olivia2024"
         }
         
-        data = {}
-        if os.path.exists(self.file_path):
-            data = self._load_db()
+        data = self._load_db()
             
         updated = False
-        
         # Verificar/Crear usuarios por defecto
         for user, pwd in default_creds.items():
             pwd_hash = self._hash_password(pwd)
@@ -46,19 +48,33 @@ class AuthManager:
             self._save_db(data)
 
     def _load_db(self):
-        """Carga la base de datos de usuarios."""
+        """Carga la base de datos de usuarios desde Google Sheets."""
+        if GSheetsConnection is None:
+            return {}
         try:
-            if os.path.exists(self.file_path):
-                with open(self.file_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+            conn = st.connection("gsheets", type=GSheetsConnection)
+            df = conn.read(worksheet="Users", ttl=0)
+            if df.empty:
+                return {}
+            df = df.dropna(how="all")
+            if "username" not in df.columns:
+                return {}
+            return df.set_index("username").to_dict(orient="index")
         except Exception:
-            pass
-        return {}
+            return {}
 
     def _save_db(self, data):
-        """Guarda la base de datos de usuarios."""
-        with open(self.file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4)
+        """Guarda la base de datos de usuarios en Google Sheets."""
+        if GSheetsConnection is None:
+            return
+        try:
+            df = pd.DataFrame.from_dict(data, orient="index")
+            df.index.name = "username"
+            df.reset_index(inplace=True)
+            conn = st.connection("gsheets", type=GSheetsConnection)
+            conn.update(worksheet="Users", data=df)
+        except Exception as e:
+            st.error(f"Error guardando en Google Sheets: {e}")
 
     def authenticate(self, username, password):
         """Verifica las credenciales del usuario."""
