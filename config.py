@@ -12,6 +12,11 @@ CLIENT_CONFIG = {
     "primary_color": "#00a8e8",
     "ai_model": "gemini-2.0-flash", # Modelo configurable (ej. gemini-2.0-flash, gemini-1.5-flash)
     "knowledge_base_folder": os.path.join(BASE_DIR, "knowledge_base"), # Carpeta con documentos fuente (txt, md, etc.)
+    "roi_defaults": {
+        "time_saved_hours": 0.25,
+        "avg_hourly_cost": 50.0,
+        "min_sessions": 10
+    },
     "system_prompt": """
         ### ROL Y PROPÓSITO
 Eres el coach en {client_name}, un mentor experto, exigente y estratégico. Tu objetivo no es dar respuestas teóricas, sino entrenar al usuario (empleado o cliente) para que aplique los conceptos contenidos en tu [CONOCIMIENTO ADJUNTO].

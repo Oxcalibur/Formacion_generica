@@ -131,6 +131,7 @@ with st.sidebar:
     nav_options = ["Asistente Formativo", "Dojo (Ponerse a prueba)"]
     if st.session_state.get("username") == "admin":
         nav_options.append("ROI Dashboard (Admin)")
+        nav_options.append("Gestión de Usuarios (Admin)")
     mode = st.radio("Navegación", nav_options)
 
 # --- Pantalla 1: Asistente Formativo (Chat) ---
@@ -245,13 +246,15 @@ elif mode == "ROI Dashboard (Admin)":
     st.header("💰 Calculadora de ROI - Olivia España")
     st.markdown("Análisis de impacto económico basado en adopción y evolución de conocimiento.")
     
+    roi_conf = CLIENT_CONFIG.get("roi_defaults", {"time_saved_hours": 0.25, "avg_hourly_cost": 50.0, "min_sessions": 10})
+    
     col1, col2, col3 = st.columns(3)
     with col1:
-        ts = st.number_input("Tiempo ahorrado por interacción (h)", value=0.25, step=0.05, format="%.2f")
+        ts = st.number_input("Tiempo ahorrado por interacción (h)", value=roi_conf["time_saved_hours"], step=0.05, format="%.2f")
     with col2:
-        ch = st.number_input("Coste hora promedio (€)", value=50.0, step=5.0, format="%.2f")
+        ch = st.number_input("Coste hora promedio (€)", value=roi_conf["avg_hourly_cost"], step=5.0, format="%.2f")
     with col3:
-        threshold = st.number_input("Mín. sesiones para ROI", value=10, min_value=1, step=1)
+        threshold = st.number_input("Mín. sesiones para ROI", value=roi_conf["min_sessions"], min_value=1, step=1)
         
     metrics = calculate_roi_metrics(ts, ch, threshold)
     
@@ -284,6 +287,9 @@ elif mode == "ROI Dashboard (Admin)":
 
     st.divider()
     st.subheader("👥 Gestión de Usuarios")
+# --- Pantalla 4: Gestión de Usuarios (Admin) ---
+elif mode == "Gestión de Usuarios (Admin)":
+    st.header("👥 Gestión de Usuarios")
     
     tab_crear, tab_reset = st.tabs(["Crear Nuevo Usuario", "Resetear Contraseña"])
     
