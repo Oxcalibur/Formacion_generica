@@ -250,11 +250,11 @@ elif mode == "ROI Dashboard (Admin)":
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        ts = st.number_input("Tiempo ahorrado por interacción (h)", value=roi_conf["time_saved_hours"], step=0.05, format="%.2f")
+        ts = st.number_input("Tiempo ahorrado por interacción (h)", value=float(roi_conf["time_saved_hours"]), step=0.05, format="%.2f", key="roi_time_input")
     with col2:
-        ch = st.number_input("Coste hora promedio (€)", value=roi_conf["avg_hourly_cost"], step=5.0, format="%.2f")
+        ch = st.number_input("Coste hora promedio (€)", value=float(roi_conf["avg_hourly_cost"]), step=5.0, format="%.2f", key="roi_cost_input")
     with col3:
-        threshold = st.number_input("Mín. sesiones para ROI", value=roi_conf["min_sessions"], min_value=1, step=1)
+        threshold = st.number_input("Mín. sesiones para ROI", value=int(roi_conf["min_sessions"]), min_value=1, step=1, key="roi_threshold_input")
         
     metrics = calculate_roi_metrics(ts, ch, threshold)
     
