@@ -67,6 +67,19 @@ with st.sidebar:
     
     if st.session_state.get("logged_in"):
         st.caption(f"Usuario: {st.session_state.username}")
+        
+        with st.expander("🔐 Cambiar Contraseña"):
+            with st.form("change_pass_form_sidebar"):
+                new_pass = st.text_input("Nueva contraseña", type="password")
+                confirm_pass = st.text_input("Confirmar", type="password")
+                if st.form_submit_button("Actualizar"):
+                    if new_pass and new_pass == confirm_pass:
+                        success, msg = auth_manager.change_password(st.session_state.username, new_pass)
+                        if success: st.success(msg)
+                        else: st.error(msg)
+                    else:
+                        st.error("Las contraseñas no coinciden.")
+
         if st.button("Cerrar Sesión"):
             # Limpiar variables de sesión para asegurar que el próximo usuario cargue datos limpios
             keys_to_reset = ["logged_in", "username", "score", "active_sessions", "chat_history", 
@@ -268,3 +281,30 @@ elif mode == "ROI Dashboard (Admin)":
         st.metric("Ahorro Económico Total", f"{final_val:,.2f} €", delta="ROI Estimado")
     else:
         st.warning("No hay datos de usuarios suficientes para calcular el ROI.")
+
+    st.divider()
+    st.subheader("👥 Gestión de Usuarios")
+    
+    tab_crear, tab_reset = st.tabs(["Crear Nuevo Usuario", "Resetear Contraseña"])
+    
+    with tab_crear:
+        with st.form("admin_add_user"):
+            new_u = st.text_input("Nombre de usuario")
+            new_p = st.text_input("Contraseña inicial", type="password")
+            new_role = st.selectbox("Rol", ["user", "admin"])
+            if st.form_submit_button("Crear Usuario"):
+                if new_u and new_p:
+                    success, msg = auth_manager.add_user(new_u, new_p, new_role)
+                    if success: st.success(msg)
+                    else: st.error(msg)
+                else:
+                    st.error("Por favor completa todos los campos.")
+
+    with tab_reset:
+        users_list = auth_manager.get_all_users()
+        user_to_edit = st.selectbox("Seleccionar Usuario", users_list)
+        new_p_reset = st.text_input("Nueva Contraseña", type="password", key="admin_reset_pass")
+        if st.button("Cambiar Contraseña"):
+            success, msg = auth_manager.change_password(user_to_edit, new_p_reset)
+            if success: st.success(msg)
+            else: st.error(msg)

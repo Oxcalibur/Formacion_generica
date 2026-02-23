@@ -95,6 +95,36 @@ class AuthManager:
             
         return input_hash == stored_hash
 
+    def add_user(self, username, password, role="user"):
+        """Añade un nuevo usuario a la base de datos."""
+        data = self._load_db()
+        if username in data:
+            return False, "El usuario ya existe."
+        
+        data[username] = {
+            "password_hash": self._hash_password(password),
+            "score": 0,
+            "active_sessions": 0,
+            "role": role
+        }
+        self._save_db(data)
+        return True, "Usuario creado correctamente."
+
+    def change_password(self, username, new_password):
+        """Cambia la contraseña de un usuario existente."""
+        data = self._load_db()
+        if username not in data:
+            return False, "Usuario no encontrado."
+            
+        data[username]["password_hash"] = self._hash_password(new_password)
+        self._save_db(data)
+        return True, "Contraseña actualizada correctamente."
+
+    def get_all_users(self):
+        """Devuelve una lista con todos los nombres de usuario."""
+        data = self._load_db()
+        return list(data.keys())
+
     def get_user_progress(self, username):
         """Obtiene el progreso actual del usuario."""
         data = self._load_db()
