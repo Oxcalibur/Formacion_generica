@@ -3,14 +3,21 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Función para obtener configuración desde secrets o usar defecto
+def get_conf(key, default_value):
+    try:
+        return st.secrets.get("client_config", {}).get(key, default_value)
+    except Exception:
+        return default_value
+
 # Configuración simulada del cliente. 
 # Esto podría cargarse dinámicamente basándose en un parámetro de URL o login.
 CLIENT_CONFIG = {
-    "client_name": "Olivia",
+    "client_name": get_conf("client_name", "Olivia"),
     "logo_path": os.path.join(BASE_DIR, "images", "logo.png"), # Logo desde carpeta local
-    "background_url": "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2072&auto=format&fit=crop",
-    "primary_color": "#00a8e8",
-    "ai_model": "gemini-2.0-flash", # Modelo configurable (ej. gemini-2.0-flash, gemini-1.5-flash)
+    "background_url": get_conf("background_url", "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2072&auto=format&fit=crop"),
+    "primary_color": get_conf("primary_color", "#00a8e8"),
+    "ai_model": get_conf("ai_model", "gemini-2.0-flash"), # Modelo configurable (ej. gemini-2.0-flash, gemini-1.5-flash)
     "knowledge_base_folder": os.path.join(BASE_DIR, "knowledge_base"), # Carpeta con documentos fuente (txt, md, etc.)
     "roi_defaults": {
         "time_saved_hours": 1,
@@ -18,7 +25,7 @@ CLIENT_CONFIG = {
         "min_sessions": 1
     },
     "log_prompts": True, # Añadir a True para registrar los prompts de los usuarios
-    "prompts_worksheet_name": "Prompts_Olivia", # Asegúrate de crear esta pestaña en tu Google Sheet
+    "prompts_worksheet_name": get_conf("prompts_worksheet_name", "Prompts_Olivia"), # Asegúrate de crear esta pestaña en tu Google Sheet
     "system_prompt": """
         ### ROL Y PROPÓSITO
 Eres el coach en {client_name}, un mentor experto, exigente y estratégico. Tu objetivo no es dar respuestas teóricas, sino entrenar al usuario (empleado o cliente) para que aplique los conceptos contenidos en tu [CONOCIMIENTO ADJUNTO].
