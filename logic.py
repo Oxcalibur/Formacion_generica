@@ -540,24 +540,29 @@ def analyze_prompt_patterns(prompts_list):
     text_data = "\n".join([f"- {p}" for p in sample_prompts]) 
 
     prompt = f"""
-    Analiza la siguiente lista de prompts (preguntas de usuarios) y agrúpalos por afinidad semántica.
-    Si los prompts incluyen información del rol (ej. [Manager] ...), úsalo para identificar patrones por perfil.
+    Analiza la siguiente lista de prompts.
+    Formato de entrada: "[ROL] Texto del prompt".
+
+    INSTRUCCIONES:
+    1. FILTRADO ESTRICTO: Ignora saludos, despedidas, frases genéricas ("hola", "gracias"), respuestas cortas de tests (ej. "a", "b", "c", "si", "no"), monosílabos y textos sin sentido semántico o valor de análisis.
+    2. JERARQUÍA: Identifica ROL -> TEMÁTICA -> INQUIETUD.
+    3. AGRUPACIÓN:
+       - Agrupa por ROL primero.
+       - Dentro del rol, agrupa por TEMÁTICA.
+       - Dentro de la temática, agrupa por INQUIETUD semántica (si preguntan lo mismo con otras palabras).
+       - Si dos roles preguntan lo mismo, deben aparecer como entradas separadas (una para cada rol).
     
     LISTA:
     {text_data}
     
-    OBJETIVO:
-    Generar una estructura de datos para visualizar una "Nube de Inquietudes".
-    Identifica los temas recurrentes, la inquietud subyacente y qué roles suelen tenerla.
-    
     SALIDA JSON (Lista de objetos):
     [
         {{
-            "tema": "Categoría General (ej. Liderazgo, Herramientas, Feedback)",
-            "inquietud": "La duda específica (ej. Cómo dar feedback negativo)",
-            "frecuencia": (número estimado de prompts en este grupo),
-            "roles_comunes": ["Rol A", "Rol B"],
-            "ejemplos": ["ejemplo real 1", "ejemplo real 2"]
+            "rol": "Manager",
+            "tematica": "Gestión de Stakeholders",
+            "inquietud": "Mapa de Empatía",
+            "frecuencia": 2,
+            "ejemplos": ["prompt 1", "prompt 2"]
         }}
     ]
     """
@@ -576,68 +581,85 @@ def analyze_prompt_patterns(prompts_list):
         return []
 
 def graficar_patrones_prompts(data):
-    """Genera un Treemap con los patrones detectados."""
+    """Genera un Treemap jerárquico: Rol -> Temática -> Inquietud."""
     if go is None or not data:
         return None
     
+    ids = []
     labels = []
     parents = []
     values = []
     hover_text = []
     
     # Nodo Raíz
+    root_id = "ROOT"
+    ids.append(root_id)
     labels.append("Temáticas")
     parents.append("")
     values.append(0) # Se calculará automáticamente o se ignora en visualización
     hover_text.append("Total")
 
+    # Estructuras auxiliares para evitar duplicados de nodos padres
+    roles_added = set()
+    topics_added = set()
+
     for item in data:
-        tema = item.get('tema', 'Otros')
-        inquietud = item.get('inquietud', 'Varios')
-        freq = item.get('frecuencia', 1)
+        rol = item.get('rol', 'General')
+        tematica = item.get('tematica', 'Varios')
+        # Asegurar que tematica no sea nula
+        if not tematica: tematica = "Varios"
         
-        # Construir etiqueta única para el tema (padre)
-        # Nota: En Treemaps simples de Plotly, si se repiten etiquetas se suman, 
-        # pero para asegurar jerarquía correcta usamos IDs implícitos o estructura plana.
-        # Aquí usaremos una estructura plana Tema -> Inquietud
-        
-        label_tema = tema
-        label_inquietud = inquietud
-        
-        # Añadir Tema si no está en la lista (esto es simplificado, idealmente usaríamos ids)
-        if label_tema not in labels:
-            labels.append(label_tema)
-            parents.append("Temáticas")
+        # 1. Nivel ROL
+        role_id = f"ROLE_{rol}"
+        if role_id not in roles_added:
+            ids.append(role_id)
+            labels.append(rol)
+            parents.append(root_id)
             values.append(0)
-            hover_text.append(f"Tema: {tema}")
+            hover_text.append(f"Rol: {rol}")
+            roles_added.add(role_id)
             
-        # Añadir Inquietud
-        # Hacemos la etiqueta única añadiendo el tema invisible o usando ids, 
-        # pero para simplificar visualmente:
-        labels.append(f"{inquietud} ") # Espacio para diferenciar si coincide nombre
-        parents.append(label_tema)
+        # 2. Nivel TEMÁTICA (Única por Rol)
+        topic_id = f"TOPIC_{rol}_{tematica}"
+        if topic_id not in topics_added:
+            ids.append(topic_id)
+            labels.append(tematica)
+            parents.append(role_id)
+            values.append(0)
+            hover_text.append(f"Temática: {tematica}")
+            topics_added.add(topic_id)
+
+    # 3. Nivel INQUIETUD (Hojas)
+    for i, item in enumerate(data):
+        rol = item.get('rol', 'General')
+        tematica = item.get('tematica', 'Varios')
+        if not tematica: tematica = "Varios"
+        inquietud = item.get('inquietud', 'Consulta')
+        freq = item.get('frecuencia', 1)
+        ejemplos = "<br>".join([f"- {ex}" for ex in item.get('ejemplos', [])[:3]])
+        
+        topic_id = f"TOPIC_{rol}_{tematica}"
+        leaf_id = f"LEAF_{i}" # ID único simple
+        
+        ids.append(leaf_id)
+        labels.append(f"{inquietud} ({freq})")
+        parents.append(topic_id)
         values.append(freq)
-        
-        roles = ", ".join(item.get('roles_comunes', []))
-        examples = "<br>".join([f"- {ex}" for ex in item.get('ejemplos', [])[:3]])
-        
-        hover_info = f"Frecuencia: {freq}"
-        if roles: hover_info += f"<br>Roles: {roles}"
-        hover_info += f"<br>Ejemplos:<br>{examples}"
-        hover_text.append(hover_info)
+        hover_text.append(f"<b>{inquietud}</b><br>Frecuencia: {freq}<br>Ejemplos:<br>{ejemplos}")
 
     fig = go.Figure(go.Treemap(
+        ids=ids,
         labels=labels,
         parents=parents,
         values=values,
-        textinfo="label+value",
+        textinfo="label",
         hovertext=hover_text,
         hoverinfo="text",
         marker=dict(colorscale='Teal')
     ))
     
     fig.update_layout(
-        title="<b>Mapa de Inquietudes (Nube de Prompts)</b>",
+        title="<b>Mapa de Inquietudes (Jerarquía: Rol > Temática > Inquietud)</b>",
         margin=dict(t=50, l=0, r=0, b=0)
     )
     return fig

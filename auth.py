@@ -150,4 +150,6 @@ class AuthManager:
         self._save_db(data)
 
 # Instancia global para usar en la app
-auth_manager = AuthManager()
+@st.cache_resource
+def get_auth_manager():
+    return AuthManager()

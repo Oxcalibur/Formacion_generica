@@ -9,7 +9,9 @@ from logic import (
     graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts,
     analyze_prompt_patterns, graficar_patrones_prompts
 )
-from auth import auth_manager
+from auth import get_auth_manager
+
+auth_manager = get_auth_manager()
 
 # --- Configuración de Página ---
 st.set_page_config(page_title=CLIENT_CONFIG["client_name"], page_icon="🎓")
@@ -411,35 +413,24 @@ elif mode == "Registro de Prompts (Admin)":
                 df_prompts["timestamp"] = pd.to_datetime(df_prompts["timestamp"])
                 df_prompts = df_prompts.sort_values(by="timestamp", ascending=False)
             
-            st.dataframe(
-                df_prompts, 
-                use_container_width=True,
-                column_config={"timestamp": st.column_config.DatetimeColumn("Fecha", format="DD/MM/YYYY HH:mm")}
-            )
-            
-            st.divider()
             st.subheader("☁️ Análisis de Tendencias (IA)")
             st.markdown("Agrupación inteligente de inquietudes por temática.")
             
-            if st.button("Analizar Prompts con IA"):
-                with st.spinner("Detectando patrones en las consultas..."):
-                    # Preparamos la lista incluyendo el rol si existe para mejor contexto
-                    if "role" in df_prompts.columns:
-                        prompts_list = [f"[{row['role']}] {row['prompt']}" for _, row in df_prompts.dropna(subset=['prompt']).iterrows()]
-                    else:
-                        prompts_list = df_prompts["prompt"].dropna().tolist()
-                        
-                    patterns = analyze_prompt_patterns(prompts_list)
-                    
-                    if patterns:
-                        fig = graficar_patrones_prompts(patterns)
-                        if fig:
-                            st.plotly_chart(fig, use_container_width=True)
-                        
-                        with st.expander("Ver detalles de los grupos detectados"):
-                            st.json(patterns)
-                    else:
-                        st.warning("No se pudieron identificar patrones suficientes.")
+            with st.spinner("Detectando patrones en las consultas..."):
+                # Preparamos la lista incluyendo el rol si existe para mejor contexto
+                if "role" in df_prompts.columns:
+                    prompts_list = [f"[{row['role']}] {row['prompt']}" for _, row in df_prompts.dropna(subset=['prompt']).iterrows()]
+                else:
+                    prompts_list = df_prompts["prompt"].dropna().tolist()
+                
+                patterns = analyze_prompt_patterns(prompts_list)
+                
+                if patterns:
+                    fig = graficar_patrones_prompts(patterns)
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("No se pudieron identificar patrones suficientes.")
         else:
             st.info("No hay prompts registrados aún.")
     else:
