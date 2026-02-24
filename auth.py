@@ -7,7 +7,6 @@ try:
     from streamlit_gsheets import GSheetsConnection
 except ImportError:
     GSheetsConnection = None
-from config import SECURITY_CONFIG
 
 class AuthManager:
     def __init__(self):

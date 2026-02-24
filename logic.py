@@ -15,6 +15,8 @@ import pandas as pd
 import streamlit as st
 import json
 import os
+import plotly.graph_objects as go
+from typing import List, Dict, Any
 from config import CLIENT_CONFIG, SECURITY_CONFIG
 
 # Definición de Cinturones (Gamificación)
@@ -369,3 +371,93 @@ def calculate_roi_metrics(time_saved_per_interaction, cost_per_hour, participati
         "Total_Value": total_value,
         "active_count": n_active
     }
+
+# --- MOTOR DE CÁLCULO ROI Y VISUALIZACIÓN ---
+
+class CalculadoraROI:
+    """
+    Motor lógico para el cálculo de ROI en proyectos de gestión del cambio.
+    Modela el impacto financiero basado en la adopción y la evolución del aprendizaje.
+    """
+
+    def __init__(
+        self,
+        n_usuarios: int,
+        coste_hora: float,
+        inversion_inicial: float,
+        tiempo_ahorrado_mins: float,
+        frecuencia_uso_mensual: float,
+        tasa_adopcion_pct: float,
+        nivel_promedio_inicial: int,
+        tasa_mejora_mensual: float
+    ) -> None:
+        self.n_usuarios = n_usuarios
+        self.coste_hora = coste_hora
+        self.inversion_inicial = inversion_inicial
+        self.tiempo_ahorrado_hours = tiempo_ahorrado_mins / 60.0
+        self.frecuencia_uso_mensual = frecuencia_uso_mensual
+        self.tasa_adopcion_pct = tasa_adopcion_pct
+        self.nivel_promedio_inicial = nivel_promedio_inicial
+        self.tasa_mejora_mensual = tasa_mejora_mensual
+
+    def proyectar_ahorro_temporal(self, meses: int) -> List[Dict[str, Any]]:
+        proyeccion = []
+        ahorro_acumulado = 0.0
+
+        # Cálculo del Ahorro Base (Constante operativa)
+        usuarios_activos = self.n_usuarios * self.tasa_adopcion_pct
+        ahorro_base_mensual = (
+            usuarios_activos * 
+            self.frecuencia_uso_mensual * 
+            self.tiempo_ahorrado_hours * 
+            self.coste_hora
+        )
+
+        for t in range(1, meses + 1):
+            # 1. Calcular Multiplicador de Evolución (Me)
+            factor_aprendizaje = 1 + (t * self.tasa_mejora_mensual)
+            multiplicador_evolucion = 1 + (self.nivel_promedio_inicial / 10.0) * factor_aprendizaje
+
+            # 2. Calcular Ahorros
+            ahorro_total_mensual = ahorro_base_mensual * multiplicador_evolucion
+            ahorro_extra_evolucion = ahorro_total_mensual - ahorro_base_mensual
+            
+            # 3. Acumulados y ROI
+            ahorro_acumulado += ahorro_total_mensual
+            roi_perc = ((ahorro_acumulado - self.inversion_inicial) / self.inversion_inicial) * 100 if self.inversion_inicial > 0 else 0
+            break_even_alcanzado = ahorro_acumulado >= self.inversion_inicial
+
+            registro_mes = {
+                "mes": t,
+                "ahorro_base": round(ahorro_base_mensual, 2),
+                "ahorro_extra_evolucion": round(ahorro_extra_evolucion, 2),
+                "ahorro_total_mensual": round(ahorro_total_mensual, 2),
+                "ahorro_acumulado": round(ahorro_acumulado, 2),
+                "inversion_objetivo": self.inversion_inicial,
+                "roi_perc": round(roi_perc, 2),
+                "break_even_alcanzado": break_even_alcanzado
+            }
+            proyeccion.append(registro_mes)
+
+        return proyeccion
+
+def graficar_break_even(df: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df['mes'], y=df['inversion_objetivo'], mode='lines', name='Inversión Inicial', line=dict(color='firebrick', width=2, dash='dash')))
+    fig.add_trace(go.Scatter(x=df['mes'], y=df['ahorro_acumulado'], mode='lines+markers', name='Ahorro Acumulado', line=dict(color='mediumseagreen', width=3), fill='tozeroy', fillcolor='rgba(60, 179, 113, 0.1)'))
+    fig.update_layout(title="<b>Punto de Equilibrio (Break Even)</b><br><sup>Cruce de Inversión vs Retorno Acumulado</sup>", xaxis_title="Meses", yaxis_title="Valor (€)", template="plotly_white", hovermode="x unified")
+    return fig
+
+def graficar_evolucion_roi(df: pd.DataFrame) -> go.Figure:
+    colors = ['crimson' if val < 0 else 'forestgreen' for val in df['roi_perc']]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=df['mes'], y=df['roi_perc'], marker_color=colors, text=df['roi_perc'].apply(lambda x: f"{x}%"), textposition='auto'))
+    fig.update_layout(title="<b>Evolución del ROI (%)</b><br><sup>Retorno sobre la Inversión mes a mes</sup>", xaxis_title="Meses", yaxis_title="ROI (%)", template="plotly_white", shapes=[dict(type="line", x0=0, x1=max(df['mes'])+0.5, y0=0, y1=0, line=dict(color="black", width=1))])
+    return fig
+
+def graficar_impacto_aprendizaje(df: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=df['mes'], y=df['ahorro_base'], name='Ahorro Operativo Base', marker_color='steelblue'))
+    fig.add_trace(go.Bar(x=df['mes'], y=df['ahorro_extra_evolucion'], name='Ahorro por Evolución (Me)', marker_color='darkorange'))
+    fig.update_layout(title="<b>Impacto Económico de la Evolución</b><br><sup>Diferencia entre uso básico y experto</sup>", xaxis_title="Meses", yaxis_title="Ahorro Mensual (€)", barmode='stack', template="plotly_white", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    return fig

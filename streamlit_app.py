@@ -1,7 +1,8 @@
 import streamlit as st
+import pandas as pd
 import os
 from config import CLIENT_CONFIG, SECURITY_CONFIG, apply_custom_styles
-from logic import get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, calculate_roi_metrics
+from logic import get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, graficar_impacto_aprendizaje
 from auth import auth_manager
 
 # --- Configuración de Página ---
@@ -246,8 +247,11 @@ elif mode == "ROI Dashboard (Admin)":
     st.header("💰 Calculadora de ROI - Olivia España")
     st.markdown("Análisis de impacto económico basado en adopción y evolución de conocimiento.")
     
+    show_graphs = st.toggle("📊 Ver Informe Completo", value=False)
+    
     roi_conf = CLIENT_CONFIG.get("roi_defaults", {"time_saved_hours": 0.25, "avg_hourly_cost": 50.0, "min_sessions": 10})
     
+    # Parámetros Operativos
     col1, col2, col3 = st.columns(3)
     with col1:
         ts = st.number_input("Tiempo ahorrado por interacción (h)", value=float(roi_conf["time_saved_hours"]), step=0.05, format="%.2f", key="roi_time_input")
@@ -255,6 +259,15 @@ elif mode == "ROI Dashboard (Admin)":
         ch = st.number_input("Coste hora promedio (€)", value=float(roi_conf["avg_hourly_cost"]), step=5.0, format="%.2f", key="roi_cost_input")
     with col3:
         threshold = st.number_input("Mín. sesiones para ROI", value=int(roi_conf["min_sessions"]), min_value=1, step=1, key="roi_threshold_input")
+    
+    # Parámetros Financieros (Proyección)
+    c_inv, c_time, c_freq = st.columns(3)
+    with c_inv:
+        investment = st.number_input("Inversión Inicial (€)", value=5000.0, step=500.0)
+    with c_time:
+        months = st.number_input("Horizonte (Meses)", value=12, min_value=1, max_value=60)
+    with c_freq:
+        proj_freq = st.number_input("Sesiones/Mes (Est.)", value=4.0, step=0.5, help="Frecuencia estimada de uso mensual por usuario activo")
         
     metrics = calculate_roi_metrics(ts, ch, threshold)
     
@@ -282,15 +295,65 @@ elif mode == "ROI Dashboard (Admin)":
         
         final_val = metrics["Total_Value"]
         st.metric("Ahorro Económico Total", f"{final_val:,.2f} €", delta="ROI Estimado")
+        
+        if show_graphs:
+            # --- PROYECCIÓN FINANCIERA ---
+            st.divider()
+            st.header("🚀 Proyección Financiera (Motor de ROI)")
+            st.caption("Simulación basada en la evolución del aprendizaje de los usuarios.")
+            
+            # Input adicional para el modelo de aprendizaje
+            tasa_mejora = st.slider("Tasa de Mejora Mensual (%)", 0.0, 15.0, 5.0, 0.5, help="Incremento mensual de eficiencia por aprendizaje") / 100.0
+            
+            # Cálculo del nivel inicial basado en el multiplicador actual (Me)
+            # Me va de 1.0 a 2.0 aprox. Mapeamos a nivel 1-10.
+            nivel_inicial = int((metrics["Me"] - 1) * 10)
+            if nivel_inicial < 1: nivel_inicial = 1
+            
+            # Instanciar Motor Lógico
+            calculadora = CalculadoraROI(
+                n_usuarios=metrics["N"],
+                coste_hora=ch,
+                inversion_inicial=investment,
+                tiempo_ahorrado_mins=ts * 60,
+                frecuencia_uso_mensual=proj_freq,
+                tasa_adopcion_pct=metrics["P"],
+                nivel_promedio_inicial=nivel_inicial,
+                tasa_mejora_mensual=tasa_mejora
+            )
+            
+            # Ejecutar Proyección
+            datos_proyeccion = calculadora.proyectar_ahorro_temporal(int(months))
+            df_proj = pd.DataFrame(datos_proyeccion)
+            
+            if not df_proj.empty:
+                # 1. Gráfico de Break Even
+                st.plotly_chart(graficar_break_even(df_proj), use_container_width=True)
+                
+                # KPI de Break Even
+                if df_proj['break_even_alcanzado'].any():
+                    mes_be = df_proj[df_proj['break_even_alcanzado']].iloc[0]['mes']
+                    st.success(f"✅ **Punto de Equilibrio alcanzado en el mes {mes_be}**")
+                else:
+                    st.warning(f"⚠️ La inversión no se recupera en el horizonte de {months} meses.")
+
+                # 2. Gráficos de Detalle (ROI e Impacto)
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.plotly_chart(graficar_evolucion_roi(df_proj), use_container_width=True)
+                with c2:
+                    st.plotly_chart(graficar_impacto_aprendizaje(df_proj), use_container_width=True)
+                
+                # Resumen Final
+                total_saved = df_proj.iloc[-1]["ahorro_acumulado"]
+                roi_final = df_proj.iloc[-1]["roi_perc"]
+                st.metric("Ahorro Acumulado Final", f"{total_saved:,.2f} €", f"ROI Final {roi_final:.1f}%")
+
     else:
         st.warning("No hay datos de usuarios suficientes para calcular el ROI.")
 
-    st.divider()
-    st.subheader("👥 Gestión de Usuarios")
 # --- Pantalla 4: Gestión de Usuarios (Admin) ---
 elif mode == "Gestión de Usuarios (Admin)":
-    st.header("👥 Gestión de Usuarios")
-    
     tab_crear, tab_reset = st.tabs(["Crear Nuevo Usuario", "Resetear Contraseña"])
     
     with tab_crear:
