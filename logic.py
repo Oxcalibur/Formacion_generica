@@ -15,9 +15,12 @@ import pandas as pd
 import streamlit as st
 import json
 import os
-import plotly.graph_objects as go
+try:
+    import plotly.graph_objects as go
+except ImportError:
+    go = None
 from typing import List, Dict, Any
-from config import CLIENT_CONFIG, SECURITY_CONFIG
+import datetime
 
 # Definición de Cinturones (Gamificación)
 BELTS = [
@@ -106,6 +109,7 @@ def load_knowledge_base(folder_path):
 
 def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
     """Genera 5 preguntas usando Gemini en formato JSON."""
+    from config import CLIENT_CONFIG
     client = init_gemini()
     if not client:
         # Retorno Mock si no hay API Key para que la app no rompa al probar
@@ -180,6 +184,7 @@ def evaluate_quiz(questions, user_answers):
 
 def get_chat_response(history, user_input, system_instruction, knowledge_context=""):
     """Obtiene respuesta del chat de Gemini."""
+    from config import CLIENT_CONFIG
     client = init_gemini()
     if not client:
         return "Modo demostración: Configura tu API Key para chatear con Gemini real."
@@ -214,6 +219,7 @@ def get_chat_response(history, user_input, system_instruction, knowledge_context
 
 def generate_dynamic_roles(knowledge_context):
     """Genera roles/niveles jerárquicos basados en el contenido."""
+    from config import CLIENT_CONFIG
     client = init_gemini()
     # Roles por defecto si falla la IA o no hay contenido
     default_roles = ["Principiante", "Intermedio", "Avanzado", "Experto"]
@@ -253,6 +259,7 @@ def generate_dynamic_roles(knowledge_context):
 
 def generate_dynamic_topics(knowledge_context):
     """Genera temas de examen basados en el contenido."""
+    from config import CLIENT_CONFIG
     client = init_gemini()
     default_topics = ["Conocimiento General"]
     
@@ -287,6 +294,56 @@ def generate_dynamic_topics(knowledge_context):
     except Exception as e:
         print(f"Error generando temas dinámicos: {e}")
         return default_topics
+
+def log_user_prompt(prompt_text: str, worksheet_name: str, role: str = "User"):
+    """
+    Registra el prompt de un usuario en una hoja de cálculo de Google Sheets.
+    
+    Args:
+        prompt_text (str): El texto del prompt introducido por el usuario.
+        worksheet_name (str): El nombre de la hoja de cálculo donde se guardará el prompt.
+        role (str): El rol del usuario que realiza la consulta.
+    """
+    if GSheetsConnection is None:
+        print("GSheetsConnection no disponible. Saltando registro de prompt.")
+        return
+
+    if not prompt_text or not worksheet_name:
+        return
+
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        
+        new_prompt_df = pd.DataFrame([
+            {"timestamp": datetime.datetime.now(), "role": role, "prompt": prompt_text}
+        ])
+
+        try:
+            existing_df = conn.read(worksheet=worksheet_name, ttl=0)
+            if existing_df.empty or ("Unnamed: 0" in existing_df.columns and len(existing_df.columns) == 1):
+                existing_df = pd.DataFrame(columns=["timestamp", "role", "prompt"])
+        except Exception:  # La hoja probablemente no existe
+            existing_df = pd.DataFrame(columns=["timestamp", "role", "prompt"])
+
+        updated_df = pd.concat([existing_df, new_prompt_df], ignore_index=True)
+        conn.update(worksheet=worksheet_name, data=updated_df)
+
+    except Exception as e:
+        # Fallo silencioso para no impactar la experiencia de usuario
+        print(f"Error al registrar prompt en Google Sheets: {e}")
+
+def get_logged_prompts(worksheet_name: str):
+    """Recupera los prompts registrados desde Google Sheets."""
+    if GSheetsConnection is None:
+        return pd.DataFrame()
+
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet=worksheet_name, ttl=0)
+        return df
+    except Exception as e:
+        print(f"Error leyendo prompts: {e}")
+        return pd.DataFrame()
 
 def calculate_roi_metrics(time_saved_per_interaction, cost_per_hour, participation_threshold=10):
     """Calcula las métricas de ROI basado en la fórmula de Olivia España."""
@@ -441,23 +498,146 @@ class CalculadoraROI:
 
         return proyeccion
 
-def graficar_break_even(df: pd.DataFrame) -> go.Figure:
+def graficar_break_even(df: pd.DataFrame):
+    if go is None:
+        st.error("La librería 'plotly' no está instalada. Ejecuta: pip install plotly")
+        return None
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df['mes'], y=df['inversion_objetivo'], mode='lines', name='Inversión Inicial', line=dict(color='firebrick', width=2, dash='dash')))
     fig.add_trace(go.Scatter(x=df['mes'], y=df['ahorro_acumulado'], mode='lines+markers', name='Ahorro Acumulado', line=dict(color='mediumseagreen', width=3), fill='tozeroy', fillcolor='rgba(60, 179, 113, 0.1)'))
     fig.update_layout(title="<b>Punto de Equilibrio (Break Even)</b><br><sup>Cruce de Inversión vs Retorno Acumulado</sup>", xaxis_title="Meses", yaxis_title="Valor (€)", template="plotly_white", hovermode="x unified")
     return fig
 
-def graficar_evolucion_roi(df: pd.DataFrame) -> go.Figure:
+def graficar_evolucion_roi(df: pd.DataFrame):
+    if go is None:
+        return None
     colors = ['crimson' if val < 0 else 'forestgreen' for val in df['roi_perc']]
     fig = go.Figure()
     fig.add_trace(go.Bar(x=df['mes'], y=df['roi_perc'], marker_color=colors, text=df['roi_perc'].apply(lambda x: f"{x}%"), textposition='auto'))
     fig.update_layout(title="<b>Evolución del ROI (%)</b><br><sup>Retorno sobre la Inversión mes a mes</sup>", xaxis_title="Meses", yaxis_title="ROI (%)", template="plotly_white", shapes=[dict(type="line", x0=0, x1=max(df['mes'])+0.5, y0=0, y1=0, line=dict(color="black", width=1))])
     return fig
 
-def graficar_impacto_aprendizaje(df: pd.DataFrame) -> go.Figure:
+def graficar_impacto_aprendizaje(df: pd.DataFrame):
+    if go is None:
+        return None
     fig = go.Figure()
     fig.add_trace(go.Bar(x=df['mes'], y=df['ahorro_base'], name='Ahorro Operativo Base', marker_color='steelblue'))
     fig.add_trace(go.Bar(x=df['mes'], y=df['ahorro_extra_evolucion'], name='Ahorro por Evolución (Me)', marker_color='darkorange'))
     fig.update_layout(title="<b>Impacto Económico de la Evolución</b><br><sup>Diferencia entre uso básico y experto</sup>", xaxis_title="Meses", yaxis_title="Ahorro Mensual (€)", barmode='stack', template="plotly_white", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    return fig
+
+def analyze_prompt_patterns(prompts_list):
+    """Analiza una lista de prompts para identificar patrones, temáticas e inquietudes."""
+    from config import CLIENT_CONFIG
+    client = init_gemini()
+    if not client or not prompts_list:
+        return []
+
+    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
+    
+    # Tomamos una muestra representativa si son muchos para no saturar el contexto
+    sample_prompts = prompts_list[:150] if len(prompts_list) > 150 else prompts_list
+    text_data = "\n".join([f"- {p}" for p in sample_prompts]) 
+
+    prompt = f"""
+    Analiza la siguiente lista de prompts (preguntas de usuarios) y agrúpalos por afinidad semántica.
+    Si los prompts incluyen información del rol (ej. [Manager] ...), úsalo para identificar patrones por perfil.
+    
+    LISTA:
+    {text_data}
+    
+    OBJETIVO:
+    Generar una estructura de datos para visualizar una "Nube de Inquietudes".
+    Identifica los temas recurrentes, la inquietud subyacente y qué roles suelen tenerla.
+    
+    SALIDA JSON (Lista de objetos):
+    [
+        {{
+            "tema": "Categoría General (ej. Liderazgo, Herramientas, Feedback)",
+            "inquietud": "La duda específica (ej. Cómo dar feedback negativo)",
+            "frecuencia": (número estimado de prompts en este grupo),
+            "roles_comunes": ["Rol A", "Rol B"],
+            "ejemplos": ["ejemplo real 1", "ejemplo real 2"]
+        }}
+    ]
+    """
+
+    try:
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
+        )
+        return json.loads(response.text)
+    except Exception as e:
+        print(f"Error analizando patrones: {e}")
+        return []
+
+def graficar_patrones_prompts(data):
+    """Genera un Treemap con los patrones detectados."""
+    if go is None or not data:
+        return None
+    
+    labels = []
+    parents = []
+    values = []
+    hover_text = []
+    
+    # Nodo Raíz
+    labels.append("Temáticas")
+    parents.append("")
+    values.append(0) # Se calculará automáticamente o se ignora en visualización
+    hover_text.append("Total")
+
+    for item in data:
+        tema = item.get('tema', 'Otros')
+        inquietud = item.get('inquietud', 'Varios')
+        freq = item.get('frecuencia', 1)
+        
+        # Construir etiqueta única para el tema (padre)
+        # Nota: En Treemaps simples de Plotly, si se repiten etiquetas se suman, 
+        # pero para asegurar jerarquía correcta usamos IDs implícitos o estructura plana.
+        # Aquí usaremos una estructura plana Tema -> Inquietud
+        
+        label_tema = tema
+        label_inquietud = inquietud
+        
+        # Añadir Tema si no está en la lista (esto es simplificado, idealmente usaríamos ids)
+        if label_tema not in labels:
+            labels.append(label_tema)
+            parents.append("Temáticas")
+            values.append(0)
+            hover_text.append(f"Tema: {tema}")
+            
+        # Añadir Inquietud
+        # Hacemos la etiqueta única añadiendo el tema invisible o usando ids, 
+        # pero para simplificar visualmente:
+        labels.append(f"{inquietud} ") # Espacio para diferenciar si coincide nombre
+        parents.append(label_tema)
+        values.append(freq)
+        
+        roles = ", ".join(item.get('roles_comunes', []))
+        examples = "<br>".join([f"- {ex}" for ex in item.get('ejemplos', [])[:3]])
+        
+        hover_info = f"Frecuencia: {freq}"
+        if roles: hover_info += f"<br>Roles: {roles}"
+        hover_info += f"<br>Ejemplos:<br>{examples}"
+        hover_text.append(hover_info)
+
+    fig = go.Figure(go.Treemap(
+        labels=labels,
+        parents=parents,
+        values=values,
+        textinfo="label+value",
+        hovertext=hover_text,
+        hoverinfo="text",
+        marker=dict(colorscale='Teal')
+    ))
+    
+    fig.update_layout(
+        title="<b>Mapa de Inquietudes (Nube de Prompts)</b>",
+        margin=dict(t=50, l=0, r=0, b=0)
+    )
     return fig

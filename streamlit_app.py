@@ -2,7 +2,13 @@ import streamlit as st
 import pandas as pd
 import os
 from config import CLIENT_CONFIG, SECURITY_CONFIG, apply_custom_styles
-from logic import get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, graficar_impacto_aprendizaje
+from logic import (
+    get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, 
+    get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, 
+    calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, 
+    graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts,
+    analyze_prompt_patterns, graficar_patrones_prompts
+)
 from auth import auth_manager
 
 # --- Configuración de Página ---
@@ -133,12 +139,18 @@ with st.sidebar:
     if st.session_state.get("username") == "admin":
         nav_options.append("ROI Dashboard (Admin)")
         nav_options.append("Gestión de Usuarios (Admin)")
+        nav_options.append("Registro de Prompts (Admin)")
     mode = st.radio("Navegación", nav_options)
 
 # --- Pantalla 1: Asistente Formativo (Chat) ---
 if mode == "Asistente Formativo":
     st.header(f"Bienvenido, {st.session_state.user_role}")
     st.caption("Pregunta cualquier duda sobre tus materiales de formación.")
+
+    # Inicializar conversación si está vacía
+    if not st.session_state.chat_history:
+        welcome_msg = f"Hola, soy {CLIENT_CONFIG['client_name']}. ¿En qué puedo ayudarte? Por favor, dime tu **rol** y tu **reto** para empezar."
+        st.session_state.chat_history.append({"role": "assistant", "content": welcome_msg})
 
     # Mostrar historial
     for msg in st.session_state.chat_history:
@@ -147,6 +159,12 @@ if mode == "Asistente Formativo":
 
     # Input de usuario
     if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
+        # Registrar prompt de forma anónima si está habilitado
+        if CLIENT_CONFIG.get("log_prompts", False):
+            worksheet = CLIENT_CONFIG.get("prompts_worksheet_name")
+            if worksheet:
+                log_user_prompt(prompt, worksheet, st.session_state.user_role)
+
         # Registrar interacción si es la primera de la sesión
         if st.session_state.get("logged_in") and not st.session_state.session_interaction_recorded:
             auth_manager.update_user_progress(st.session_state.username, increment_session=True)
@@ -377,3 +395,52 @@ elif mode == "Gestión de Usuarios (Admin)":
             success, msg = auth_manager.change_password(user_to_edit, new_p_reset)
             if success: st.success(msg)
             else: st.error(msg)
+
+# --- Pantalla 5: Registro de Prompts (Admin) ---
+elif mode == "Registro de Prompts (Admin)":
+    st.header("📋 Registro de Prompts")
+    st.markdown("Visualización de las consultas realizadas por los usuarios (Anónimo).")
+    
+    worksheet_name = CLIENT_CONFIG.get("prompts_worksheet_name")
+    if worksheet_name:
+        with st.spinner("Cargando registros..."):
+            df_prompts = get_logged_prompts(worksheet_name)
+        
+        if not df_prompts.empty:
+            if "timestamp" in df_prompts.columns:
+                df_prompts["timestamp"] = pd.to_datetime(df_prompts["timestamp"])
+                df_prompts = df_prompts.sort_values(by="timestamp", ascending=False)
+            
+            st.dataframe(
+                df_prompts, 
+                use_container_width=True,
+                column_config={"timestamp": st.column_config.DatetimeColumn("Fecha", format="DD/MM/YYYY HH:mm")}
+            )
+            
+            st.divider()
+            st.subheader("☁️ Análisis de Tendencias (IA)")
+            st.markdown("Agrupación inteligente de inquietudes por temática.")
+            
+            if st.button("Analizar Prompts con IA"):
+                with st.spinner("Detectando patrones en las consultas..."):
+                    # Preparamos la lista incluyendo el rol si existe para mejor contexto
+                    if "role" in df_prompts.columns:
+                        prompts_list = [f"[{row['role']}] {row['prompt']}" for _, row in df_prompts.dropna(subset=['prompt']).iterrows()]
+                    else:
+                        prompts_list = df_prompts["prompt"].dropna().tolist()
+                        
+                    patterns = analyze_prompt_patterns(prompts_list)
+                    
+                    if patterns:
+                        fig = graficar_patrones_prompts(patterns)
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=True)
+                        
+                        with st.expander("Ver detalles de los grupos detectados"):
+                            st.json(patterns)
+                    else:
+                        st.warning("No se pudieron identificar patrones suficientes.")
+        else:
+            st.info("No hay prompts registrados aún.")
+    else:
+        st.warning("No se ha configurado la hoja de registro de prompts.")

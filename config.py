@@ -17,6 +17,8 @@ CLIENT_CONFIG = {
         "avg_hourly_cost": 50.0,
         "min_sessions": 1
     },
+    "log_prompts": True, # Añadir a True para registrar los prompts de los usuarios
+    "prompts_worksheet_name": "Prompts_Olivia", # Asegúrate de crear esta pestaña en tu Google Sheet
     "system_prompt": """
         ### ROL Y PROPÓSITO
 Eres el coach en {client_name}, un mentor experto, exigente y estratégico. Tu objetivo no es dar respuestas teóricas, sino entrenar al usuario (empleado o cliente) para que aplique los conceptos contenidos en tu [CONOCIMIENTO ADJUNTO].
