@@ -1,7 +1,17 @@
 import streamlit as st
+import pandas as pd
 import os
 from config import CLIENT_CONFIG, SECURITY_CONFIG, apply_custom_styles
-from logic import get_current_belt, generate_quiz_questions, evaluate_quiz, get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, check_credentials, load_user_progress, save_user_progress
+from logic import (
+    get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, 
+    get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, 
+    calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, 
+    graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts,
+    analyze_prompt_patterns, graficar_patrones_prompts
+)
+from auth import get_auth_manager
+
+auth_manager = get_auth_manager()
 
 # --- Configuración de Página ---
 st.set_page_config(page_title=CLIENT_CONFIG["client_name"], page_icon="🎓")
@@ -12,6 +22,10 @@ if "user_role" not in st.session_state:
     st.session_state.user_role = "Estudiante"
 if "score" not in st.session_state:
     st.session_state.score = 0
+if "active_sessions" not in st.session_state:
+    st.session_state.active_sessions = 0
+if "session_interaction_recorded" not in st.session_state:
+    st.session_state.session_interaction_recorded = False
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "quiz_active" not in st.session_state:
@@ -41,10 +55,12 @@ if SECURITY_CONFIG.get("enable_auth", False):
             u = st.text_input("Usuario")
             p = st.text_input("Contraseña", type="password")
             if st.form_submit_button("Entrar"):
-                if check_credentials(u, p):
+                if auth_manager.authenticate(u, p):
                     st.session_state.logged_in = True
                     st.session_state.username = u
-                    st.session_state.score = load_user_progress(u) # Cargar nivel guardado
+                    user_data = auth_manager.get_user_progress(u) # Cargar datos guardados
+                    st.session_state.score = user_data["score"]
+                    st.session_state.active_sessions = user_data["active_sessions"]
                     st.rerun()
                 else:
                     st.error("Credenciales incorrectas")
@@ -60,9 +76,26 @@ with st.sidebar:
     
     if st.session_state.get("logged_in"):
         st.caption(f"Usuario: {st.session_state.username}")
+        
+        with st.expander("🔐 Cambiar Contraseña"):
+            with st.form("change_pass_form_sidebar"):
+                new_pass = st.text_input("Nueva contraseña", type="password")
+                confirm_pass = st.text_input("Confirmar", type="password")
+                if st.form_submit_button("Actualizar"):
+                    if new_pass and new_pass == confirm_pass:
+                        success, msg = auth_manager.change_password(st.session_state.username, new_pass)
+                        if success: st.success(msg)
+                        else: st.error(msg)
+                    else:
+                        st.error("Las contraseñas no coinciden.")
+
         if st.button("Cerrar Sesión"):
-            st.session_state.logged_in = False
-            st.session_state.username = None
+            # Limpiar variables de sesión para asegurar que el próximo usuario cargue datos limpios
+            keys_to_reset = ["logged_in", "username", "score", "active_sessions", "chat_history", 
+                             "quiz_active", "current_questions", "session_interaction_recorded", "user_role"]
+            for key in keys_to_reset:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
             
     # Indicador de estado de la Base de Conocimiento
@@ -89,18 +122,37 @@ with st.sidebar:
     
     # Estado del Cinturón
     belt = get_current_belt(st.session_state.score)
+    progress_data = get_next_belt_data(st.session_state.score)
+    
     st.markdown(f"### 🥋 Nivel Actual")
     st.markdown(f"**{belt['name']}**")
     st.progress(min(1.0, st.session_state.score / (belt['threshold'] + 200))) # Barra de progreso visual
-    st.caption(f"Puntos: {st.session_state.score}")
+    st.caption(f"Puntos: {st.session_state.score} | Sesiones: {st.session_state.active_sessions}")
+    st.progress(min(1.0, max(0.0, progress_data["progress"]))) # Barra de progreso visual
+    
+    if progress_data["progress"] < 1.0:
+        st.caption(f"Próximo: {progress_data['next_name']} ({st.session_state.score}/{progress_data['threshold']} pts)")
+    else:
+        st.caption(f"¡Máximo nivel alcanzado! ({st.session_state.score} pts)")
     
     st.divider()
-    mode = st.radio("Navegación", ["Asistente Formativo", "Dojo (Ponerse a prueba)"])
+    
+    nav_options = ["Asistente Formativo", "Dojo (Ponerse a prueba)"]
+    if st.session_state.get("username") == "admin":
+        nav_options.append("ROI Dashboard (Admin)")
+        nav_options.append("Gestión de Usuarios (Admin)")
+        nav_options.append("Registro de Prompts (Admin)")
+    mode = st.radio("Navegación", nav_options)
 
 # --- Pantalla 1: Asistente Formativo (Chat) ---
 if mode == "Asistente Formativo":
     st.header(f"Bienvenido, {st.session_state.user_role}")
     st.caption("Pregunta cualquier duda sobre tus materiales de formación.")
+
+    # Inicializar conversación si está vacía
+    if not st.session_state.chat_history:
+        welcome_msg = f"Hola, soy {CLIENT_CONFIG['client_name']}. ¿En qué puedo ayudarte? Por favor, dime tu **rol** y tu **reto** para empezar."
+        st.session_state.chat_history.append({"role": "assistant", "content": welcome_msg})
 
     # Mostrar historial
     for msg in st.session_state.chat_history:
@@ -109,6 +161,18 @@ if mode == "Asistente Formativo":
 
     # Input de usuario
     if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
+        # Registrar prompt de forma anónima si está habilitado
+        if CLIENT_CONFIG.get("log_prompts", False):
+            worksheet = CLIENT_CONFIG.get("prompts_worksheet_name")
+            if worksheet:
+                log_user_prompt(prompt, worksheet, st.session_state.user_role)
+
+        # Registrar interacción si es la primera de la sesión
+        if st.session_state.get("logged_in") and not st.session_state.session_interaction_recorded:
+            auth_manager.update_user_progress(st.session_state.username, increment_session=True)
+            st.session_state.active_sessions += 1
+            st.session_state.session_interaction_recorded = True
+
         # Guardar y mostrar mensaje usuario
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -177,7 +241,11 @@ elif mode == "Dojo (Ponerse a prueba)":
                 st.session_state.score += points
                 # Guardar progreso automáticamente
                 if st.session_state.get("username"):
-                    save_user_progress(st.session_state.username, st.session_state.score)
+                    increment = not st.session_state.session_interaction_recorded
+                    auth_manager.update_user_progress(st.session_state.username, score=st.session_state.score, increment_session=increment)
+                    if increment:
+                        st.session_state.active_sessions += 1
+                        st.session_state.session_interaction_recorded = True
                 st.session_state.quiz_active = False
                 st.session_state.current_questions = [] # Limpiar
                 
@@ -193,3 +261,177 @@ elif mode == "Dojo (Ponerse a prueba)":
                 
                 if st.button("Volver al Dojo"):
                     st.rerun()
+
+# --- Pantalla 3: ROI Dashboard (Admin) ---
+elif mode == "ROI Dashboard (Admin)":
+    st.header("💰 Calculadora de ROI - Olivia España")
+    st.markdown("Análisis de impacto económico basado en adopción y evolución de conocimiento.")
+    
+    show_graphs = st.toggle("📊 Ver Informe Completo", value=False)
+    
+    roi_conf = CLIENT_CONFIG.get("roi_defaults", {"time_saved_hours": 0.25, "avg_hourly_cost": 50.0, "min_sessions": 10})
+    
+    # Parámetros Operativos
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        ts = st.number_input("Tiempo ahorrado por interacción (h)", value=float(roi_conf["time_saved_hours"]), step=0.05, format="%.2f", key="roi_time_input")
+    with col2:
+        ch = st.number_input("Coste hora promedio (€)", value=float(roi_conf["avg_hourly_cost"]), step=5.0, format="%.2f", key="roi_cost_input")
+    with col3:
+        threshold = st.number_input("Mín. sesiones para ROI", value=int(roi_conf["min_sessions"]), min_value=1, step=1, key="roi_threshold_input")
+    
+    # Parámetros Financieros (Proyección)
+    c_inv, c_time, c_freq = st.columns(3)
+    with c_inv:
+        investment = st.number_input("Inversión Inicial (€)", value=5000.0, step=500.0)
+    with c_time:
+        months = st.number_input("Horizonte (Meses)", value=12, min_value=1, max_value=60)
+    with c_freq:
+        proj_freq = st.number_input("Sesiones/Mes (Est.)", value=4.0, step=0.5, help="Frecuencia estimada de uso mensual por usuario activo")
+        
+    metrics = calculate_roi_metrics(ts, ch, threshold)
+    
+    if metrics:
+        st.divider()
+        
+        # 1. Ahorro Operativo
+        st.subheader("1. Ahorro Operativo ($AH_{op}$)")
+        st.latex(r"AH_{op} = (N \cdot P) \cdot (F \cdot T_s)")
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Usuarios (N)", metrics["N"])
+        c2.metric("Tasa Part. (P)", f"{metrics['P']:.1%}", help=f"{metrics['active_count']} usuarios con >= {threshold} usos")
+        c3.metric("Frecuencia (F)", f"{metrics['F']:.1f}", help="Media de sesiones de usuarios activos")
+        c4.metric("Ahorro Base", f"{metrics['AH_op']:.1f} h")
+        
+        # 2. Multiplicador
+        st.subheader("2. Multiplicador de Evolución ($M_e$)")
+        st.latex(r"M_e = 1 + \left( \frac{\text{Nivel Actual} - 1}{\text{Nivel Máximo}} \right)")
+        st.metric("Multiplicador Promedio", f"x{metrics['Me']:.2f}", help="Basado en el nivel de cinturón de los usuarios activos")
+        
+        # 3. Total
+        st.subheader("3. Valor Total Generado")
+        st.latex(r"\text{Valor} = (AH_{op} \cdot M_e) \cdot C_h")
+        
+        final_val = metrics["Total_Value"]
+        st.metric("Ahorro Económico Total", f"{final_val:,.2f} €", delta="ROI Estimado")
+        
+        if show_graphs:
+            # --- PROYECCIÓN FINANCIERA ---
+            st.divider()
+            st.header("🚀 Proyección Financiera (Motor de ROI)")
+            st.caption("Simulación basada en la evolución del aprendizaje de los usuarios.")
+            
+            # Input adicional para el modelo de aprendizaje
+            tasa_mejora = st.slider("Tasa de Mejora Mensual (%)", 0.0, 15.0, 5.0, 0.5, help="Incremento mensual de eficiencia por aprendizaje") / 100.0
+            
+            # Cálculo del nivel inicial basado en el multiplicador actual (Me)
+            # Me va de 1.0 a 2.0 aprox. Mapeamos a nivel 1-10.
+            nivel_inicial = int((metrics["Me"] - 1) * 10)
+            if nivel_inicial < 1: nivel_inicial = 1
+            
+            # Instanciar Motor Lógico
+            calculadora = CalculadoraROI(
+                n_usuarios=metrics["N"],
+                coste_hora=ch,
+                inversion_inicial=investment,
+                tiempo_ahorrado_mins=ts * 60,
+                frecuencia_uso_mensual=proj_freq,
+                tasa_adopcion_pct=metrics["P"],
+                nivel_promedio_inicial=nivel_inicial,
+                tasa_mejora_mensual=tasa_mejora
+            )
+            
+            # Ejecutar Proyección
+            datos_proyeccion = calculadora.proyectar_ahorro_temporal(int(months))
+            df_proj = pd.DataFrame(datos_proyeccion)
+            
+            if not df_proj.empty:
+                # 1. Gráfico de Break Even
+                st.plotly_chart(graficar_break_even(df_proj), use_container_width=True)
+                
+                # KPI de Break Even
+                if df_proj['break_even_alcanzado'].any():
+                    mes_be = df_proj[df_proj['break_even_alcanzado']].iloc[0]['mes']
+                    st.success(f"✅ **Punto de Equilibrio alcanzado en el mes {mes_be}**")
+                else:
+                    st.warning(f"⚠️ La inversión no se recupera en el horizonte de {months} meses.")
+
+                # 2. Gráficos de Detalle (ROI e Impacto)
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.plotly_chart(graficar_evolucion_roi(df_proj), use_container_width=True)
+                with c2:
+                    st.plotly_chart(graficar_impacto_aprendizaje(df_proj), use_container_width=True)
+                
+                # Resumen Final
+                total_saved = df_proj.iloc[-1]["ahorro_acumulado"]
+                roi_final = df_proj.iloc[-1]["roi_perc"]
+                st.metric("Ahorro Acumulado Final", f"{total_saved:,.2f} €", f"ROI Final {roi_final:.1f}%")
+
+    else:
+        st.warning("No hay datos de usuarios suficientes para calcular el ROI.")
+
+# --- Pantalla 4: Gestión de Usuarios (Admin) ---
+elif mode == "Gestión de Usuarios (Admin)":
+    tab_crear, tab_reset = st.tabs(["Crear Nuevo Usuario", "Resetear Contraseña"])
+    
+    with tab_crear:
+        with st.form("admin_add_user"):
+            new_u = st.text_input("Nombre de usuario")
+            new_p = st.text_input("Contraseña inicial", type="password")
+            new_role = st.selectbox("Rol", ["user", "admin"])
+            if st.form_submit_button("Crear Usuario"):
+                if new_u and new_p:
+                    success, msg = auth_manager.add_user(new_u, new_p, new_role)
+                    if success: st.success(msg)
+                    else: st.error(msg)
+                else:
+                    st.error("Por favor completa todos los campos.")
+
+    with tab_reset:
+        users_list = auth_manager.get_all_users()
+        user_to_edit = st.selectbox("Seleccionar Usuario", users_list)
+        new_p_reset = st.text_input("Nueva Contraseña", type="password", key="admin_reset_pass")
+        if st.button("Cambiar Contraseña"):
+            success, msg = auth_manager.change_password(user_to_edit, new_p_reset)
+            if success: st.success(msg)
+            else: st.error(msg)
+
+# --- Pantalla 5: Registro de Prompts (Admin) ---
+elif mode == "Registro de Prompts (Admin)":
+    st.header("📋 Registro de Prompts")
+    st.markdown("Visualización de las consultas realizadas por los usuarios (Anónimo).")
+    
+    worksheet_name = CLIENT_CONFIG.get("prompts_worksheet_name")
+    if worksheet_name:
+        with st.spinner("Cargando registros..."):
+            df_prompts = get_logged_prompts(worksheet_name)
+        
+        if not df_prompts.empty:
+            if "timestamp" in df_prompts.columns:
+                df_prompts["timestamp"] = pd.to_datetime(df_prompts["timestamp"])
+                df_prompts = df_prompts.sort_values(by="timestamp", ascending=False)
+            
+            st.subheader("☁️ Análisis de Tendencias (IA)")
+            st.markdown("Agrupación inteligente de inquietudes por temática.")
+            
+            with st.spinner("Detectando patrones en las consultas..."):
+                # Preparamos la lista incluyendo el rol si existe para mejor contexto
+                if "role" in df_prompts.columns:
+                    prompts_list = [f"[{row['role']}] {row['prompt']}" for _, row in df_prompts.dropna(subset=['prompt']).iterrows()]
+                else:
+                    prompts_list = df_prompts["prompt"].dropna().tolist()
+                
+                patterns = analyze_prompt_patterns(prompts_list)
+                
+                if patterns:
+                    fig = graficar_patrones_prompts(patterns)
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("No se pudieron identificar patrones suficientes.")
+        else:
+            st.info("No hay prompts registrados aún.")
+    else:
+        st.warning("No se ha configurado la hoja de registro de prompts.")
