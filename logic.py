@@ -133,12 +133,15 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
     CONFIGURACIÓN DEL EXAMEN:
     - Tema sugerido: '{topic}'
     - Dificultad: {difficulty}
-    - Rol del usuario: {role}
+    - Perfil Profesional / Cargo: {role}
     
     REGLAS DE GENERACIÓN:
-    1. PRIORIDAD DE CONTENIDO: Si hay texto en la Base de Conocimiento, las preguntas deben basarse EXCLUSIVAMENTE en esa información. Si el 'Tema sugerido' no está en el texto, ignóralo y pregunta sobre los conceptos clave del documento.
-    2. DINAMISMO: Evita preguntas repetitivas. Varía entre definiciones, casos de uso y análisis según el contenido.
-    3. FORMATO DE SALIDA: Responde ÚNICAMENTE con un JSON válido (lista de objetos).
+    1. ADAPTACIÓN AL ROL: Las preguntas deben estar diseñadas específicamente para un '{role}'. 
+       - Si es un rol de gestión (Manager, Director), enfócate en estrategia, toma de decisiones y aplicación de conceptos.
+       - Si es un rol técnico/operativo, enfócate en ejecución, detalles y procedimientos.
+    2. PRIORIDAD DE CONTENIDO: Si hay texto en la Base de Conocimiento, las preguntas deben basarse EXCLUSIVAMENTE en esa información. Si el 'Tema sugerido' no está en el texto, ignóralo y pregunta sobre los conceptos clave del documento.
+    3. DINAMISMO: Evita preguntas repetitivas. Varía entre definiciones, casos de uso y análisis según el contenido.
+    4. FORMATO DE SALIDA: Responde ÚNICAMENTE con un JSON válido (lista de objetos).
     
     Ejemplo de estructura JSON requerida:
     [
@@ -397,6 +400,7 @@ def calculate_roi_metrics(time_saved_per_interaction, cost_per_hour, participati
     if max_level_idx < 1: max_level_idx = 1
     
     sum_me = 0
+    sum_me_hist = 0
     if n_active > 0:
         for u in active_users:
             score = u.get("score", 0)
@@ -412,12 +416,17 @@ def calculate_roi_metrics(time_saved_per_interaction, cost_per_hour, participati
             # Dado que idx es base 0, equivale a (Nivel Actual - 1)
             me_user = 1 + (idx / max_level_idx)
             sum_me += me_user
+            # Para el histórico, asumimos evolución lineal: Promedio entre inicio (1.0) y actual
+            sum_me_hist += (1.0 + me_user) / 2
         Me = sum_me / n_active
+        Me_avg = sum_me_hist / n_active
     else:
         Me = 1.0
+        Me_avg = 1.0
         
     # Valor Total
-    total_value = (AH_op * Me) * cost_per_hour
+    # Usamos Me_avg para el cálculo histórico porque los usuarios no empezaron siendo expertos
+    total_value = (AH_op * Me_avg) * cost_per_hour
     
     return {
         "N": N,
@@ -425,9 +434,29 @@ def calculate_roi_metrics(time_saved_per_interaction, cost_per_hour, participati
         "F": avg_freq,
         "AH_op": AH_op,
         "Me": Me,
+        "Me_avg": Me_avg,
         "Total_Value": total_value,
         "active_count": n_active
     }
+
+def calculate_historical_improvement_rate(current_me, avg_sessions, freq_monthly):
+    """
+    Calcula una tasa de mejora mensual sugerida basada en el histórico real.
+    Estima cuánto ha mejorado el usuario promedio por mes de uso.
+    """
+    if freq_monthly <= 0 or avg_sessions <= 0:
+        return 0.0
+    
+    # Estimar meses que llevan usando la herramienta (Sesiones Totales / Frecuencia Mensual)
+    estimated_months = avg_sessions / freq_monthly
+    if estimated_months < 1.0: estimated_months = 1.0
+    
+    # Mejora total obtenida hasta ahora (Me actual - Base 1.0)
+    total_improvement = current_me - 1.0
+    if total_improvement < 0: total_improvement = 0.0
+    
+    # Tasa mensual lineal
+    return total_improvement / estimated_months
 
 # --- MOTOR DE CÁLCULO ROI Y VISUALIZACIÓN ---
 
@@ -445,7 +474,7 @@ class CalculadoraROI:
         tiempo_ahorrado_mins: float,
         frecuencia_uso_mensual: float,
         tasa_adopcion_pct: float,
-        nivel_promedio_inicial: int,
+        nivel_promedio_inicial: float,
         tasa_mejora_mensual: float
     ) -> None:
         self.n_usuarios = n_usuarios
@@ -473,7 +502,9 @@ class CalculadoraROI:
         for t in range(1, meses + 1):
             # 1. Calcular Multiplicador de Evolución (Me)
             factor_aprendizaje = 1 + (t * self.tasa_mejora_mensual)
-            multiplicador_evolucion = 1 + (self.nivel_promedio_inicial / 10.0) * factor_aprendizaje
+            # Aplicamos el factor de aprendizaje a la eficiencia total (Base + Bonus Nivel)
+            # Antes solo aplicaba al bonus, lo que anulaba el efecto en usuarios principiantes
+            multiplicador_evolucion = (1 + (self.nivel_promedio_inicial / 10.0)) * factor_aprendizaje
 
             # 2. Calcular Ahorros
             ahorro_total_mensual = ahorro_base_mensual * multiplicador_evolucion
@@ -590,6 +621,7 @@ def graficar_patrones_prompts(data):
     parents = []
     values = []
     hover_text = []
+    customdata = []
     
     # Nodo Raíz
     root_id = "ROOT"
@@ -598,6 +630,7 @@ def graficar_patrones_prompts(data):
     parents.append("")
     values.append(0) # Se calculará automáticamente o se ignora en visualización
     hover_text.append("Total")
+    customdata.append("Global (Visión General)")
 
     # Estructuras auxiliares para evitar duplicados de nodos padres
     roles_added = set()
@@ -618,6 +651,7 @@ def graficar_patrones_prompts(data):
             values.append(0)
             hover_text.append(f"Rol: {rol}")
             roles_added.add(role_id)
+            customdata.append(f"Rol: {rol}")
             
         # 2. Nivel TEMÁTICA (Única por Rol)
         topic_id = f"TOPIC_{rol}_{tematica}"
@@ -628,6 +662,7 @@ def graficar_patrones_prompts(data):
             values.append(0)
             hover_text.append(f"Temática: {tematica}")
             topics_added.add(topic_id)
+            customdata.append(f"Tema: {tematica}")
 
     # 3. Nivel INQUIETUD (Hojas)
     for i, item in enumerate(data):
@@ -646,6 +681,7 @@ def graficar_patrones_prompts(data):
         parents.append(topic_id)
         values.append(freq)
         hover_text.append(f"<b>{inquietud}</b><br>Frecuencia: {freq}<br>Ejemplos:<br>{ejemplos}")
+        customdata.append(f"Inquietud: {inquietud}")
 
     fig = go.Figure(go.Treemap(
         ids=ids,
@@ -655,7 +691,8 @@ def graficar_patrones_prompts(data):
         textinfo="label",
         hovertext=hover_text,
         hoverinfo="text",
-        marker=dict(colorscale='Teal')
+        marker=dict(colorscale='Teal'),
+        customdata=customdata
     ))
     
     fig.update_layout(
@@ -663,3 +700,41 @@ def graficar_patrones_prompts(data):
         margin=dict(t=50, l=0, r=0, b=0)
     )
     return fig
+
+def generate_action_plan(patterns, focus="Global"):
+    """Genera un plan de acción estratégico basado en los patrones de inquietudes."""
+    from config import CLIENT_CONFIG
+    client = init_gemini()
+    if not client:
+        return "⚠️ Error: No se pudo conectar con el motor de IA para generar el plan."
+
+    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
+    
+    # Serializar patrones (limitado para no saturar contexto si hay muchos)
+    patterns_summary = json.dumps(patterns[:60], indent=2, ensure_ascii=False)
+    
+    prompt = f"""
+    Actúa como un Consultor Estratégico de Formación y Desarrollo (L&D).
+    Analiza los siguientes patrones de consultas de usuarios (inquietudes detectadas en la plataforma):
+    
+    DATOS DE TENDENCIAS:
+    {patterns_summary}
+    
+    TU TAREA:
+    Diseñar un PLAN DE ACCIÓN recomendado para mejorar la capacitación.
+    
+    ENFOQUE DEL ANÁLISIS: {focus}
+    
+    INSTRUCCIONES:
+    1. PRIORIZACIÓN POR PESO: Observa la 'frecuencia' de cada inquietud. Tu plan DEBE priorizar y dar más peso a los temas con mayor frecuencia (mayor número de interacciones).
+    2. Si el enfoque es 'Global', identifica las brechas de conocimiento más críticas en toda la organización.
+    3. Si el enfoque es un 'Rol' o 'Tema' específico, propón soluciones tácticas para ese segmento.
+    4. FORMATO: Usa Markdown. Estructura: "Diagnóstico (Priorizado por Peso)", "Acciones Inmediatas (Quick Wins)" y "Propuesta de Contenido a Largo Plazo".
+    5. Sé ejecutivo, directo y orientado a resultados.
+    """
+    
+    try:
+        response = client.models.generate_content(model=model_name, contents=prompt)
+        return response.text
+    except Exception as e:
+        return f"Error generando el plan de acción: {e}"
