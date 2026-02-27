@@ -6,8 +6,8 @@ from logic import (
     get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, 
     get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, 
     calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, 
-    graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts,
-    analyze_prompt_patterns, graficar_patrones_prompts
+    graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts, analyze_prompt_patterns,
+    graficar_patrones_prompts, calculate_historical_improvement_rate
 )
 from auth import get_auth_manager
 
@@ -58,9 +58,10 @@ if SECURITY_CONFIG.get("enable_auth", False):
                 if auth_manager.authenticate(u, p):
                     st.session_state.logged_in = True
                     st.session_state.username = u
-                    user_data = auth_manager.get_user_progress(u) # Cargar datos guardados
+                    user_data = auth_manager.get_user_profile(u) # Cargar datos guardados
                     st.session_state.score = user_data["score"]
                     st.session_state.active_sessions = user_data["active_sessions"]
+                    st.session_state.user_role = user_data["job_role"]
                     st.rerun()
                 else:
                     st.error("Credenciales incorrectas")
@@ -77,6 +78,15 @@ with st.sidebar:
     if st.session_state.get("logged_in"):
         st.caption(f"Usuario: {st.session_state.username}")
         
+        with st.expander("👤 Mi Puesto / Rol"):
+            current_role = st.session_state.get("user_role", "Estudiante")
+            new_role = st.text_input("Cargo en la empresa", value=current_role)
+            if st.button("Guardar Cargo"):
+                if auth_manager.update_user_job_role(st.session_state.username, new_role):
+                    st.session_state.user_role = new_role
+                    st.success("Guardado")
+                    st.rerun()
+
         with st.expander("🔐 Cambiar Contraseña"):
             with st.form("change_pass_form_sidebar"):
                 new_pass = st.text_input("Nueva contraseña", type="password")
@@ -104,19 +114,11 @@ with st.sidebar:
     else:
         st.warning("⚠️ Base de conocimiento vacía")
     
-    # Generar roles dinámicos si no existen
-    if not st.session_state.dynamic_roles:
-        if st.session_state.knowledge_base:
-            with st.spinner("Analizando contenido para definir niveles..."):
-                st.session_state.dynamic_roles = generate_dynamic_roles(st.session_state.knowledge_base)
-        else:
-            st.session_state.dynamic_roles = ["Principiante", "Intermedio", "Avanzado", "Experto"]
-
-    # Selector de Rol
-    st.session_state.user_role = st.selectbox(
-        "Tu Nivel / Rol", 
-        st.session_state.dynamic_roles
-    )
+    # Selector de Rol (Oculto por solicitud, ahora se gestiona en 'Mi Puesto / Rol')
+    # st.session_state.user_role = st.selectbox(
+    #     "Tu Nivel / Rol", 
+    #     st.session_state.dynamic_roles
+    # )
     
     st.divider()
     
@@ -151,7 +153,8 @@ if mode == "Asistente Formativo":
 
     # Inicializar conversación si está vacía
     if not st.session_state.chat_history:
-        welcome_msg = f"Hola, soy {CLIENT_CONFIG['client_name']}. ¿En qué puedo ayudarte? Por favor, dime tu **rol** y tu **reto** para empezar."
+        current_role = st.session_state.get("user_role", "Estudiante")
+        welcome_msg = f"Hola, soy {CLIENT_CONFIG['client_name']}. Entiendo que tu rol es **{current_role}**. ¿Cuál es tu reto para hoy?"
         st.session_state.chat_history.append({"role": "assistant", "content": welcome_msg})
 
     # Mostrar historial
@@ -181,8 +184,17 @@ if mode == "Asistente Formativo":
         # Generar respuesta
         with st.chat_message("assistant"):
             with st.spinner("Consultando base de conocimiento..."):
-                system_prompt = CLIENT_CONFIG["system_prompt"].format(client_name=CLIENT_CONFIG["client_name"])
-                response = get_chat_response(st.session_state.chat_history, prompt, system_prompt, st.session_state.knowledge_base)
+                base_prompt = CLIENT_CONFIG["system_prompt"].format(client_name=CLIENT_CONFIG["client_name"])
+                
+                # Inyectar el rol actual para modificar el comportamiento de la Fase 1
+                current_role = st.session_state.get("user_role", "Estudiante")
+                role_context = (
+                    f"\n\nCONTEXTO DEL USUARIO:\nCargo/Rol actual: {current_role}\n"
+                    f"INSTRUCCIÓN: El usuario YA tiene el rol '{current_role}'. NO preguntes por el rol. Ve directo a resolver el reto o tema planteado."
+                )
+                
+                full_prompt = base_prompt + role_context
+                response = get_chat_response(st.session_state.chat_history, prompt, full_prompt, st.session_state.knowledge_base)
                 st.markdown(response)
         
         st.session_state.chat_history.append({"role": "assistant", "content": response})
@@ -190,7 +202,7 @@ if mode == "Asistente Formativo":
 # --- Pantalla 2: Dojo (Quiz) ---
 elif mode == "Dojo (Ponerse a prueba)":
     st.header("🥋 El Dojo")
-    st.write("Demuestra tu conocimiento para subir de cinturón.")
+    st.markdown(f"Demuestra tu conocimiento para subir de cinturón.  \n**Perfil de evaluación:** {st.session_state.user_role}")
 
     if not st.session_state.quiz_active:
         # Generar temas dinámicos si no existen
@@ -294,6 +306,16 @@ elif mode == "ROI Dashboard (Admin)":
     if metrics:
         st.divider()
         
+        # --- RECALCULATION WITH ROUNDED VALUES FOR DISPLAY CONSISTENCY ---
+        f_rounded = round(metrics.get('F', 0), 1)
+        me_rounded = round(metrics.get('Me', 1.0), 2)
+        me_avg_rounded = round(metrics.get('Me_avg', 1.0), 2)
+        
+        # Recalculate AH_op and Total_Value using the rounded display values
+        ah_op_display = (metrics['N'] * metrics['P']) * (f_rounded * ts)
+        total_value_display = (ah_op_display * me_avg_rounded) * ch
+        # --- END RECALCULATION ---
+
         # 1. Ahorro Operativo
         st.subheader("1. Ahorro Operativo ($AH_{op}$)")
         st.latex(r"AH_{op} = (N \cdot P) \cdot (F \cdot T_s)")
@@ -301,20 +323,19 @@ elif mode == "ROI Dashboard (Admin)":
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Usuarios (N)", metrics["N"])
         c2.metric("Tasa Part. (P)", f"{metrics['P']:.1%}", help=f"{metrics['active_count']} usuarios con >= {threshold} usos")
-        c3.metric("Frecuencia (F)", f"{metrics['F']:.1f}", help="Media de sesiones de usuarios activos")
-        c4.metric("Ahorro Base", f"{metrics['AH_op']:.1f} h")
+        c3.metric("Frecuencia (F)", f"{f_rounded:.1f}", help="Media de sesiones de usuarios activos")
+        c4.metric("Ahorro Base", f"{ah_op_display:.1f} h")
         
         # 2. Multiplicador
         st.subheader("2. Multiplicador de Evolución ($M_e$)")
         st.latex(r"M_e = 1 + \left( \frac{\text{Nivel Actual} - 1}{\text{Nivel Máximo}} \right)")
-        st.metric("Multiplicador Promedio", f"x{metrics['Me']:.2f}", help="Basado en el nivel de cinturón de los usuarios activos")
+        st.metric("Multiplicador Actual", f"x{me_rounded:.2f}", help="Nivel de eficiencia que tienen los usuarios HOY.")
         
         # 3. Total
         st.subheader("3. Valor Total Generado")
-        st.latex(r"\text{Valor} = (AH_{op} \cdot M_e) \cdot C_h")
+        st.latex(r"\text{Valor} = (AH_{op} \cdot M_{avg}) \cdot C_h")
         
-        final_val = metrics["Total_Value"]
-        st.metric("Ahorro Económico Total", f"{final_val:,.2f} €", delta="ROI Estimado")
+        st.metric("Ahorro Económico Total", f"{total_value_display:,.2f} €", help=f"Calculado usando la eficiencia media histórica (x{me_avg_rounded}) para compensar la curva de aprendizaje.")
         
         if show_graphs:
             # --- PROYECCIÓN FINANCIERA ---
@@ -322,13 +343,19 @@ elif mode == "ROI Dashboard (Admin)":
             st.header("🚀 Proyección Financiera (Motor de ROI)")
             st.caption("Simulación basada en la evolución del aprendizaje de los usuarios.")
             
-            # Input adicional para el modelo de aprendizaje
-            tasa_mejora = st.slider("Tasa de Mejora Mensual (%)", 0.0, 15.0, 5.0, 0.5, help="Incremento mensual de eficiencia por aprendizaje") / 100.0
+            # Cálculo de tasa sugerida basada en histórico
+            suggested_rate = calculate_historical_improvement_rate(metrics["Me"], metrics["F"], proj_freq)
+            suggested_rate_pct = suggested_rate * 100.0
+            st.info(f"💡 **Dato Histórico:** Basado en el uso actual, tus usuarios mejoran su eficiencia un **{suggested_rate_pct:.1f}%** al mes.")
+            
+            # Input adicional para el modelo de aprendizaje (Preconfigurado con el dato histórico)
+            default_rate = max(0.0, min(15.0, float(suggested_rate_pct)))
+            tasa_mejora = st.slider("Tasa de Mejora Mensual (%)", 0.0, 15.0, default_rate, 0.1, help="Incremento lineal de eficiencia acumulado cada mes (Mes × Tasa)") / 100.0
             
             # Cálculo del nivel inicial basado en el multiplicador actual (Me)
             # Me va de 1.0 a 2.0 aprox. Mapeamos a nivel 1-10.
-            nivel_inicial = int((metrics["Me"] - 1) * 10)
-            if nivel_inicial < 1: nivel_inicial = 1
+            nivel_inicial = (me_rounded - 1) * 10 # Usamos el valor redondeado y sin convertir a int
+            if nivel_inicial < 0: nivel_inicial = 0.0
             
             # Instanciar Motor Lógico
             calculadora = CalculadoraROI(
@@ -337,7 +364,7 @@ elif mode == "ROI Dashboard (Admin)":
                 inversion_inicial=investment,
                 tiempo_ahorrado_mins=ts * 60,
                 frecuencia_uso_mensual=proj_freq,
-                tasa_adopcion_pct=metrics["P"],
+                tasa_adopcion_pct=metrics["P"], # Se mantiene la precisión para la proyección
                 nivel_promedio_inicial=nivel_inicial,
                 tasa_mejora_mensual=tasa_mejora
             )
@@ -429,6 +456,46 @@ elif mode == "Registro de Prompts (Admin)":
                     fig = graficar_patrones_prompts(patterns)
                     if fig:
                         st.plotly_chart(fig, use_container_width=True)
+                        
+                        # --- Plan de Acción Recomendado ---
+                        st.divider()
+                        st.subheader("🧠 Plan de Acción Recomendado (IA)")
+                        st.caption("Genera una estrategia de formación basada en las inquietudes detectadas en el mapa.")
+
+                        # Extraer opciones dinámicas del análisis
+                        roles_detected = sorted(list(set(p.get('rol', 'General') for p in patterns)))
+                        topics_detected = sorted(list(set(p.get('tematica', 'Varios') for p in patterns)))
+                        
+                        options = ["Global (Visión General)"] + [f"Rol: {r}" for r in roles_detected] + [f"Tema: {t}" for t in topics_detected]
+                        
+                        col_sel, col_btn = st.columns([3, 1])
+                        with col_sel:
+                            selection = st.selectbox("Enfocar plan en:", options)
+                        
+                        # Filtrar patrones para que el análisis sea específico a la selección
+                        filtered_patterns = patterns
+                        if selection.startswith("Rol: "):
+                            role_key = selection.replace("Rol: ", "")
+                            filtered_patterns = [p for p in patterns if p.get('rol', 'General') == role_key]
+                        elif selection.startswith("Tema: "):
+                            topic_key = selection.replace("Tema: ", "")
+                            filtered_patterns = [p for p in patterns if p.get('tematica', 'Varios') == topic_key]
+
+                        with col_btn:
+                            # Espaciado para alinear con el selectbox
+                            st.write("") 
+                            st.write("")
+                            if st.button("Generar Plan", use_container_width=True):
+                                st.session_state.gen_plan_clicked = True
+                        
+                        # Mostrar resultado si se ha solicitado (o usar estado si se prefiere persistencia simple)
+                        if st.session_state.get("gen_plan_clicked", False):
+                            with st.spinner(f"Diseñando estrategia para: {selection}..."):
+                                from logic import generate_action_plan
+                                plan = generate_action_plan(filtered_patterns, focus=selection)
+                                st.info(f"Estrategia generada para: **{selection}**")
+                                st.markdown(plan)
+                                st.session_state.gen_plan_clicked = False # Reset para permitir regenerar
                 else:
                     st.warning("No se pudieron identificar patrones suficientes.")
         else:
