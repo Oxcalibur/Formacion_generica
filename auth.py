@@ -35,13 +35,18 @@ class AuthManager:
                     "password_hash": pwd_hash,
                     "score": 0,
                     "active_sessions": 0,
-                    "role": "admin" if user == "admin" else "user"
+                    "role": "admin" if user == "admin" else "user",
+                    "job_role": "Administrador" if user == "admin" else "Estudiante"
                 }
                 updated = True
-            elif data[user].get("password_hash") != pwd_hash:
-                # Actualizar contraseña si ha cambiado en código
-                data[user]["password_hash"] = pwd_hash
-                updated = True
+            else:
+                if "job_role" not in data[user]:
+                    data[user]["job_role"] = "Administrador" if user == "admin" else "Estudiante"
+                    updated = True
+                if data[user].get("password_hash") != pwd_hash:
+                    # Actualizar contraseña si ha cambiado en código
+                    data[user]["password_hash"] = pwd_hash
+                    updated = True
                 
         if updated:
             self._save_db(data)
@@ -94,7 +99,7 @@ class AuthManager:
             
         return input_hash == stored_hash
 
-    def add_user(self, username, password, role="user"):
+    def add_user(self, username, password, role="user", job_role="Estudiante"):
         """Añade un nuevo usuario a la base de datos."""
         data = self._load_db()
         if username in data:
@@ -104,7 +109,8 @@ class AuthManager:
             "password_hash": self._hash_password(password),
             "score": 0,
             "active_sessions": 0,
-            "role": role
+            "role": role,
+            "job_role": job_role
         }
         self._save_db(data)
         return True, "Usuario creado correctamente."
@@ -124,14 +130,24 @@ class AuthManager:
         data = self._load_db()
         return list(data.keys())
 
-    def get_user_progress(self, username):
-        """Obtiene el progreso actual del usuario."""
+    def get_user_profile(self, username):
+        """Obtiene el perfil completo del usuario (progreso y rol)."""
         data = self._load_db()
         user = data.get(username, {})
         return {
             "score": user.get("score", 0),
-            "active_sessions": user.get("active_sessions", 0)
+            "active_sessions": user.get("active_sessions", 0),
+            "job_role": user.get("job_role", "Estudiante")
         }
+
+    def update_user_job_role(self, username, job_role):
+        """Actualiza el puesto/rol del usuario."""
+        data = self._load_db()
+        if username in data:
+            data[username]["job_role"] = job_role
+            self._save_db(data)
+            return True
+        return False
 
     def update_user_progress(self, username, score=None, increment_session=False):
         """Actualiza la puntuación y sesiones del usuario."""
@@ -150,6 +166,6 @@ class AuthManager:
         self._save_db(data)
 
 # Instancia global para usar en la app
-@st.cache_resource
+@st.cache_resource(ttl=3600)
 def get_auth_manager():
     return AuthManager()
