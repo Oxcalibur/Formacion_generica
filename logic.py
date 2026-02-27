@@ -621,6 +621,7 @@ def graficar_patrones_prompts(data):
     parents = []
     values = []
     hover_text = []
+    customdata = []
     
     # Nodo Raíz
     root_id = "ROOT"
@@ -629,6 +630,7 @@ def graficar_patrones_prompts(data):
     parents.append("")
     values.append(0) # Se calculará automáticamente o se ignora en visualización
     hover_text.append("Total")
+    customdata.append("Global (Visión General)")
 
     # Estructuras auxiliares para evitar duplicados de nodos padres
     roles_added = set()
@@ -649,6 +651,7 @@ def graficar_patrones_prompts(data):
             values.append(0)
             hover_text.append(f"Rol: {rol}")
             roles_added.add(role_id)
+            customdata.append(f"Rol: {rol}")
             
         # 2. Nivel TEMÁTICA (Única por Rol)
         topic_id = f"TOPIC_{rol}_{tematica}"
@@ -659,6 +662,7 @@ def graficar_patrones_prompts(data):
             values.append(0)
             hover_text.append(f"Temática: {tematica}")
             topics_added.add(topic_id)
+            customdata.append(f"Tema: {tematica}")
 
     # 3. Nivel INQUIETUD (Hojas)
     for i, item in enumerate(data):
@@ -677,6 +681,7 @@ def graficar_patrones_prompts(data):
         parents.append(topic_id)
         values.append(freq)
         hover_text.append(f"<b>{inquietud}</b><br>Frecuencia: {freq}<br>Ejemplos:<br>{ejemplos}")
+        customdata.append(f"Inquietud: {inquietud}")
 
     fig = go.Figure(go.Treemap(
         ids=ids,
@@ -686,7 +691,8 @@ def graficar_patrones_prompts(data):
         textinfo="label",
         hovertext=hover_text,
         hoverinfo="text",
-        marker=dict(colorscale='Teal')
+        marker=dict(colorscale='Teal'),
+        customdata=customdata
     ))
     
     fig.update_layout(
@@ -720,10 +726,11 @@ def generate_action_plan(patterns, focus="Global"):
     ENFOQUE DEL ANÁLISIS: {focus}
     
     INSTRUCCIONES:
-    1. Si el enfoque es 'Global', identifica las brechas de conocimiento más críticas en toda la organización.
-    2. Si el enfoque es un 'Rol' o 'Tema' específico, propón soluciones tácticas para ese segmento.
-    3. FORMATO: Usa Markdown. Estructura: "Diagnóstico", "Acciones Inmediatas (Quick Wins)" y "Propuesta de Contenido a Largo Plazo".
-    4. Sé ejecutivo, directo y orientado a resultados.
+    1. PRIORIZACIÓN POR PESO: Observa la 'frecuencia' de cada inquietud. Tu plan DEBE priorizar y dar más peso a los temas con mayor frecuencia (mayor número de interacciones).
+    2. Si el enfoque es 'Global', identifica las brechas de conocimiento más críticas en toda la organización.
+    3. Si el enfoque es un 'Rol' o 'Tema' específico, propón soluciones tácticas para ese segmento.
+    4. FORMATO: Usa Markdown. Estructura: "Diagnóstico (Priorizado por Peso)", "Acciones Inmediatas (Quick Wins)" y "Propuesta de Contenido a Largo Plazo".
+    5. Sé ejecutivo, directo y orientado a resultados.
     """
     
     try:

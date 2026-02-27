@@ -84,7 +84,6 @@ with st.sidebar:
             if st.button("Guardar Cargo"):
                 if auth_manager.update_user_job_role(st.session_state.username, new_role):
                     st.session_state.user_role = new_role
-                    st.success("Guardado")
                     st.rerun()
 
         with st.expander("🔐 Cambiar Contraseña"):
@@ -453,33 +452,87 @@ elif mode == "Registro de Prompts (Admin)":
                 patterns = analyze_prompt_patterns(prompts_list)
                 
                 if patterns:
-                    fig = graficar_patrones_prompts(patterns)
+                    # 1. Controles de Filtrado (Mueven el Mapa y el Plan)
+                    if "trend_filter" not in st.session_state:
+                        st.session_state.trend_filter = "Global (Visión General)"
+
+                    def update_filter_from_combo():
+                        st.session_state.trend_filter = st.session_state.combo_selection
+
+                    roles_detected = sorted(list(set(p.get('rol', 'General') for p in patterns)))
+                    topics_detected = sorted(list(set(p.get('tematica', 'Varios') for p in patterns)))
+                    
+                    # Generación Dinámica de Opciones (Solo mostrar relacionadas)
+                    current_filter = st.session_state.trend_filter
+                    base_options = ["Global (Visión General)"]
+                    
+                    if current_filter == "Global (Visión General)":
+                        # Si es Global, mostramos todo
+                        dynamic_options = base_options + [f"Rol: {r}" for r in roles_detected] + [f"Tema: {t}" for t in topics_detected]
+                    elif current_filter.startswith("Rol: "):
+                        # Si es un Rol, mostramos ese Rol y sus Temas asociados
+                        selected_role = current_filter.replace("Rol: ", "")
+                        related_topics = sorted(list(set(p.get('tematica', 'Varios') for p in patterns if p.get('rol') == selected_role)))
+                        dynamic_options = base_options + [current_filter] + [f"Tema: {t}" for t in related_topics]
+                    else:
+                        # Si es un Tema o Inquietud, permitimos volver a Global o mantener selección
+                        dynamic_options = base_options + [current_filter]
+                    
+                    col_sel, col_btn = st.columns([3, 1])
+                    
+                    # Asegurar que la selección actual esté en las opciones (por seguridad)
+                    if current_filter not in dynamic_options:
+                        dynamic_options.append(current_filter)
+                        
+                    try:
+                        sel_index = dynamic_options.index(current_filter)
+                    except ValueError:
+                        sel_index = 0
+
+                    with col_sel:
+                        selection = st.selectbox(
+                            "🔍 Filtrar Mapa y Plan por:", 
+                            dynamic_options, 
+                            index=sel_index,
+                            key="combo_selection",
+                            on_change=update_filter_from_combo
+                        )
+
+                    # 2. Filtrar Datos (Sincronización)
+                    filtered_patterns = patterns
+                    if selection.startswith("Rol: "):
+                        role_key = selection.replace("Rol: ", "")
+                        filtered_patterns = [p for p in patterns if p.get('rol', 'General') == role_key]
+                    elif selection.startswith("Tema: "):
+                        topic_key = selection.replace("Tema: ", "")
+                        filtered_patterns = [p for p in patterns if p.get('tematica', 'Varios') == topic_key]
+
+                    # 3. Generar Mapa Dinámico
+                    fig = graficar_patrones_prompts(filtered_patterns)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=True)
+                        fig.update_layout(title=f"<b>Mapa de Inquietudes ({selection})</b>")
+                        
+                        # Capturar evento de clic en el gráfico
+                        event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
+                        
+                        # Lógica: Si se toca el mapa, actualizar el filtro (Maestro)
+                        if event and event.get("selection") and event["selection"]["points"]:
+                            clicked_point = event["selection"]["points"][0]
+                            # customdata contiene la etiqueta formateada (ej: "Rol: Director")
+                            clicked_val = clicked_point.get("customdata")
+                            
+                            # Validar si lo clickeado es una opción válida de filtro (Rol o Tema)
+                            # Nota: Las "Inquietudes" (hojas) no suelen ser filtros de alto nivel, pero si se desea, se puede adaptar.
+                            # Aquí asumimos que si clickea Rol o Tema, filtramos.
+                            if clicked_val and (clicked_val.startswith("Rol: ") or clicked_val.startswith("Tema: ") or clicked_val == "Global (Visión General)"):
+                                if clicked_val != st.session_state.trend_filter:
+                                    st.session_state.trend_filter = clicked_val
+                                    st.rerun()
                         
                         # --- Plan de Acción Recomendado ---
                         st.divider()
                         st.subheader("🧠 Plan de Acción Recomendado (IA)")
                         st.caption("Genera una estrategia de formación basada en las inquietudes detectadas en el mapa.")
-
-                        # Extraer opciones dinámicas del análisis
-                        roles_detected = sorted(list(set(p.get('rol', 'General') for p in patterns)))
-                        topics_detected = sorted(list(set(p.get('tematica', 'Varios') for p in patterns)))
-                        
-                        options = ["Global (Visión General)"] + [f"Rol: {r}" for r in roles_detected] + [f"Tema: {t}" for t in topics_detected]
-                        
-                        col_sel, col_btn = st.columns([3, 1])
-                        with col_sel:
-                            selection = st.selectbox("Enfocar plan en:", options)
-                        
-                        # Filtrar patrones para que el análisis sea específico a la selección
-                        filtered_patterns = patterns
-                        if selection.startswith("Rol: "):
-                            role_key = selection.replace("Rol: ", "")
-                            filtered_patterns = [p for p in patterns if p.get('rol', 'General') == role_key]
-                        elif selection.startswith("Tema: "):
-                            topic_key = selection.replace("Tema: ", "")
-                            filtered_patterns = [p for p in patterns if p.get('tematica', 'Varios') == topic_key]
 
                         with col_btn:
                             # Espaciado para alinear con el selectbox
