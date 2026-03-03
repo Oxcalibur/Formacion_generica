@@ -442,115 +442,117 @@ elif mode == "Registro de Prompts (Admin)":
             st.subheader("☁️ Análisis de Tendencias (IA)")
             st.markdown("Agrupación inteligente de inquietudes por temática.")
             
-            with st.spinner("Detectando patrones en las consultas..."):
-                # Preparamos la lista incluyendo el rol si existe para mejor contexto
-                if "role" in df_prompts.columns:
-                    prompts_list = [f"[{row['role']}] {row['prompt']}" for _, row in df_prompts.dropna(subset=['prompt']).iterrows()]
-                else:
-                    prompts_list = df_prompts["prompt"].dropna().tolist()
-                
-                patterns = analyze_prompt_patterns(prompts_list)
-                
-                if patterns:
-                    # 1. Controles de Filtrado (Mueven el Mapa y el Plan)
-                    if "trend_filter" not in st.session_state:
-                        st.session_state.trend_filter = "Global (Visión General)"
+            # Botón para refrescar análisis (limpiar caché)
+            if st.button("🔄 Refrescar Análisis IA"):
+                if "patterns_cache" in st.session_state:
+                    del st.session_state.patterns_cache
+                st.rerun()
 
-                    def update_filter_from_combo():
-                        st.session_state.trend_filter = st.session_state.combo_selection
-
-                    roles_detected = sorted(list(set(p.get('rol', 'General') for p in patterns)))
-                    topics_detected = sorted(list(set(p.get('tematica', 'Varios') for p in patterns)))
-                    
-                    # Generación Dinámica de Opciones (Solo mostrar relacionadas)
-                    current_filter = st.session_state.trend_filter
-                    base_options = ["Global (Visión General)"]
-                    
-                    if current_filter == "Global (Visión General)":
-                        # Si es Global, mostramos todo
-                        dynamic_options = base_options + [f"Rol: {r}" for r in roles_detected] + [f"Tema: {t}" for t in topics_detected]
-                    elif current_filter.startswith("Rol: "):
-                        # Si es un Rol, mostramos ese Rol y sus Temas asociados
-                        selected_role = current_filter.replace("Rol: ", "")
-                        related_topics = sorted(list(set(p.get('tematica', 'Varios') for p in patterns if p.get('rol') == selected_role)))
-                        dynamic_options = base_options + [current_filter] + [f"Tema: {t}" for t in related_topics]
+            if "patterns_cache" not in st.session_state:
+                with st.spinner("Detectando patrones en las consultas..."):
+                    # Preparamos la lista incluyendo el rol si existe para mejor contexto
+                    if "role" in df_prompts.columns:
+                        prompts_list = [f"[{row['role']}] {row['prompt']}" for _, row in df_prompts.dropna(subset=['prompt']).iterrows()]
                     else:
-                        # Si es un Tema o Inquietud, permitimos volver a Global o mantener selección
-                        dynamic_options = base_options + [current_filter]
+                        prompts_list = df_prompts["prompt"].dropna().tolist()
                     
-                    col_sel, col_btn = st.columns([3, 1])
+                    st.session_state.patterns_cache = analyze_prompt_patterns(prompts_list)
+            
+            patterns = st.session_state.patterns_cache
+            
+            if patterns:
+                # 1. Controles de Filtrado (Mueven el Mapa y el Plan)
+                if "trend_filter" not in st.session_state:
+                    st.session_state.trend_filter = "Global (Visión General)"
+
+                current_filter = st.session_state.trend_filter
+
+                def update_filter_from_combo():
+                    st.session_state.trend_filter = st.session_state.combo_selection
+
+                roles_detected = sorted(list(set(p.get('rol', 'General') for p in patterns)))
+                topics_detected = sorted(list(set(p.get('tematica', 'Varios') for p in patterns)))
+                
+                # Generación Dinámica de Opciones (Simplificada para navegación fluida)
+                # Mostramos siempre todas las opciones para evitar problemas de refresco o navegación
+                base_options = ["Global (Visión General)"]
+                dynamic_options = base_options + [f"Rol: {r}" for r in roles_detected] + [f"Tema: {t}" for t in topics_detected]
+                
+                col_sel, col_btn = st.columns([3, 1])
+                
+                # Asegurar que la selección actual esté en las opciones (por seguridad)
+                if current_filter not in dynamic_options:
+                    dynamic_options.append(current_filter)
                     
-                    # Asegurar que la selección actual esté en las opciones (por seguridad)
-                    if current_filter not in dynamic_options:
-                        dynamic_options.append(current_filter)
-                        
-                    try:
-                        sel_index = dynamic_options.index(current_filter)
-                    except ValueError:
-                        sel_index = 0
+                try:
+                    sel_index = dynamic_options.index(current_filter)
+                except ValueError:
+                    sel_index = 0
 
-                    with col_sel:
-                        selection = st.selectbox(
-                            "🔍 Filtrar Mapa y Plan por:", 
-                            dynamic_options, 
-                            index=sel_index,
-                            key="combo_selection",
-                            on_change=update_filter_from_combo
-                        )
+                with col_sel:
+                    selection = st.selectbox(
+                        "🔍 Filtrar Mapa y Plan por:", 
+                        dynamic_options, 
+                        index=sel_index,
+                        key="combo_selection",
+                        on_change=update_filter_from_combo
+                    )
 
-                    # 2. Filtrar Datos (Sincronización)
-                    filtered_patterns = patterns
-                    if selection.startswith("Rol: "):
-                        role_key = selection.replace("Rol: ", "")
-                        filtered_patterns = [p for p in patterns if p.get('rol', 'General') == role_key]
-                    elif selection.startswith("Tema: "):
-                        topic_key = selection.replace("Tema: ", "")
-                        filtered_patterns = [p for p in patterns if p.get('tematica', 'Varios') == topic_key]
+                # 2. Filtrar Datos (Sincronización)
+                filtered_patterns = patterns
+                if selection.startswith("Rol: "):
+                    role_key = selection.replace("Rol: ", "")
+                    filtered_patterns = [p for p in patterns if p.get('rol', 'General') == role_key]
+                elif selection.startswith("Tema: "):
+                    topic_key = selection.replace("Tema: ", "")
+                    filtered_patterns = [p for p in patterns if p.get('tematica', 'Varios') == topic_key]
 
-                    # 3. Generar Mapa Dinámico
-                    fig = graficar_patrones_prompts(filtered_patterns)
-                    if fig:
-                        fig.update_layout(title=f"<b>Mapa de Inquietudes ({selection})</b>")
+                # 3. Generar Mapa Dinámico
+                fig = graficar_patrones_prompts(filtered_patterns)
+                if fig:
+                    fig.update_layout(title=f"<b>Mapa de Inquietudes ({selection})</b>")
+                    
+                    # Capturar evento de clic en el gráfico
+                    # Añadimos key dinámica para forzar refresco correcto al cambiar selección
+                    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points", key=f"map_{selection}")
+                    
+                    # Lógica: Si se toca el mapa, actualizar el filtro (Maestro)
+                    if event and event.get("selection") and event["selection"]["points"]:
+                        clicked_point = event["selection"]["points"][0]
+                        # customdata contiene la etiqueta formateada (ej: "Rol: Director")
+                        clicked_val = clicked_point.get("customdata")
                         
-                        # Capturar evento de clic en el gráfico
-                        event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
-                        
-                        # Lógica: Si se toca el mapa, actualizar el filtro (Maestro)
-                        if event and event.get("selection") and event["selection"]["points"]:
-                            clicked_point = event["selection"]["points"][0]
-                            # customdata contiene la etiqueta formateada (ej: "Rol: Director")
-                            clicked_val = clicked_point.get("customdata")
-                            
-                            # Validar si lo clickeado es una opción válida de filtro (Rol o Tema)
-                            # Nota: Las "Inquietudes" (hojas) no suelen ser filtros de alto nivel, pero si se desea, se puede adaptar.
-                            # Aquí asumimos que si clickea Rol o Tema, filtramos.
-                            if clicked_val and (clicked_val.startswith("Rol: ") or clicked_val.startswith("Tema: ") or clicked_val == "Global (Visión General)"):
-                                if clicked_val != st.session_state.trend_filter:
-                                    st.session_state.trend_filter = clicked_val
-                                    st.rerun()
-                        
-                        # --- Plan de Acción Recomendado ---
-                        st.divider()
-                        st.subheader("🧠 Plan de Acción Recomendado (IA)")
-                        st.caption("Genera una estrategia de formación basada en las inquietudes detectadas en el mapa.")
+                        # Validar si lo clickeado es una opción válida de filtro (Rol o Tema)
+                        # Nota: Las "Inquietudes" (hojas) no suelen ser filtros de alto nivel, pero si se desea, se puede adaptar.
+                        # Aquí asumimos que si clickea Rol o Tema, filtramos.
+                        if clicked_val and (clicked_val.startswith("Rol: ") or clicked_val.startswith("Tema: ") or clicked_val == "Global (Visión General)"):
+                            if clicked_val != st.session_state.trend_filter:
+                                st.session_state.trend_filter = clicked_val
+                                st.rerun()
+                    
+                    # --- Plan de Acción Recomendado ---
+                    st.divider()
+                    st.subheader("🧠 Plan de Acción Recomendado (IA)")
+                    st.caption("Genera una estrategia de formación basada en las inquietudes detectadas en el mapa.")
 
-                        with col_btn:
-                            # Espaciado para alinear con el selectbox
-                            st.write("") 
-                            st.write("")
-                            if st.button("Generar Plan", use_container_width=True):
-                                st.session_state.gen_plan_clicked = True
-                        
-                        # Mostrar resultado si se ha solicitado (o usar estado si se prefiere persistencia simple)
-                        if st.session_state.get("gen_plan_clicked", False):
-                            with st.spinner(f"Diseñando estrategia para: {selection}..."):
-                                from logic import generate_action_plan
-                                plan = generate_action_plan(filtered_patterns, focus=selection)
-                                st.info(f"Estrategia generada para: **{selection}**")
-                                st.markdown(plan)
-                                st.session_state.gen_plan_clicked = False # Reset para permitir regenerar
-                else:
-                    st.warning("No se pudieron identificar patrones suficientes.")
+                    with col_btn:
+                        # Espaciado para alinear con el selectbox
+                        st.write("") 
+                        st.write("")
+                        if st.button("Generar Plan", use_container_width=True):
+                            st.session_state.gen_plan_clicked = True
+                    
+                    # Mostrar resultado si se ha solicitado (o usar estado si se prefiere persistencia simple)
+                    if st.session_state.get("gen_plan_clicked", False):
+                        with st.spinner(f"Diseñando estrategia para: {selection}..."):
+                            from logic import generate_action_plan
+                            # Pasamos la base de conocimiento para que la IA reconozca metodologías específicas (ej. SCARF)
+                            plan = generate_action_plan(filtered_patterns, focus=selection, knowledge_context=st.session_state.knowledge_base)
+                            st.info(f"Estrategia generada para: **{selection}**")
+                            st.markdown(plan)
+                            st.session_state.gen_plan_clicked = False # Reset para permitir regenerar
+            else:
+                st.warning("No se pudieron identificar patrones suficientes.")
         else:
             st.info("No hay prompts registrados aún.")
     else:

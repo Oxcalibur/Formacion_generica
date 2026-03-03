@@ -701,7 +701,7 @@ def graficar_patrones_prompts(data):
     )
     return fig
 
-def generate_action_plan(patterns, focus="Global"):
+def generate_action_plan(patterns, focus="Global", knowledge_context=""):
     """Genera un plan de acción estratégico basado en los patrones de inquietudes."""
     from config import CLIENT_CONFIG
     client = init_gemini()
@@ -716,6 +716,9 @@ def generate_action_plan(patterns, focus="Global"):
     prompt = f"""
     Actúa como un Consultor Estratégico de Formación y Desarrollo (L&D).
     Analiza los siguientes patrones de consultas de usuarios (inquietudes detectadas en la plataforma):
+    
+    CONTEXTO DE LA BASE DE CONOCIMIENTO (Referencia):
+    {knowledge_context[:30000] if knowledge_context else "No disponible."}
     
     DATOS DE TENDENCIAS:
     {patterns_summary}
