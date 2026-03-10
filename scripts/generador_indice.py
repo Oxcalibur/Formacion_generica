@@ -126,12 +126,24 @@ def generate_index():
                 config=types.GenerateContentConfig(response_mime_type="application/json")
             )
             
-            metadata = json.loads(response.text)
+            datos_gemini = json.loads(response.text)
+            
+            # Validación robusta: Si Gemini devuelve una lista, tomamos el primer elemento.
+            if isinstance(datos_gemini, list):
+                if len(datos_gemini) > 0:
+                    metadata = datos_gemini[0]
+                else:
+                    raise ValueError("Gemini devolvió una lista JSON vacía.")
+            else:
+                # Si devuelve un diccionario directamente
+                metadata = datos_gemini
+
+            # Ahora inyectamos nuestras variables con seguridad
             metadata["original_url"] = url
             metadata["full_url"] = f"{url}{metadata.get('parametros_url', '')}"
             
             master_index[resource_id] = metadata
-            print(f"      ✅ Indexado: {metadata.get('tema_clave')}")
+            print(f"      ✅ Indexado: {metadata.get('tema_clave', 'Tema no definido')}")
 
         except Exception as e:
             print(f"      ❌ Fallo al procesar video: {e}")
