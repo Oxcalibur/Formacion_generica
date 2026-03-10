@@ -175,7 +175,7 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
     
     Ejemplo de estructura JSON requerida:
     [
-        {{"question": "¿Qué es X?", "options": ["A", "B", "C"], "answer": "A"}}
+        {"question": "¿Qué es X?", "options": ["A", "B", "C"], "answer": "A"}
     ]
     """
     
@@ -637,13 +637,13 @@ def analyze_prompt_patterns(prompts_list):
     
     SALIDA JSON (Lista de objetos):
     [
-        {{
+        {
             "rol": "Manager",
             "tematica": "Gestión de Stakeholders",
             "inquietud": "Mapa de Empatía",
             "frecuencia": 2,
             "ejemplos": ["prompt 1", "prompt 2"]
-        }}
+        }
     ]
     """
 

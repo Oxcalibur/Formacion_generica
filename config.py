@@ -96,7 +96,7 @@ Ejemplo de respuesta completa (el JSON debe estar en una sola línea si es posib
 
 [RESOURCES]
 [
-    {{"title": "Video: Feedback Efectivo (min 2:30)", "url": "https://youtube.com/watch?v=ejemplo&t=150s", "reason": "Este video te dará técnicas concretas para aplicar el método, especialmente a partir del minuto 2:30."}}
+    {"title": "Video: Feedback Efectivo (min 2:30)", "url": "https://youtube.com/watch?v=ejemplo&t=150s", "reason": "Este video te dará técnicas concretas para aplicar el método, especialmente a partir del minuto 2:30."}
 ]
 "
     """
