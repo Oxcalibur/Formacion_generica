@@ -23,8 +23,16 @@ if not GEMINI_API_KEY:
 
 # Rutas relativas asumiendo ejecución desde la raíz del proyecto
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_FILE = os.path.join(BASE_DIR, "knowledge_base", "multimedia.csv")
-OUTPUT_INDEX = os.path.join(BASE_DIR, "knowledge_base", "video_index.json")
+
+# Búsqueda robusta del archivo multimedia.csv
+possible_paths = [
+    os.path.join(BASE_DIR, "knowledge_base", "multimedia.csv"),
+    os.path.join(BASE_DIR, "knowledge_Base", "multimedia.csv"),
+    os.path.join(BASE_DIR, "data", "multimedia.csv")
+]
+
+DATA_FILE = next((p for p in possible_paths if os.path.exists(p)), possible_paths[0])
+OUTPUT_INDEX = os.path.join(os.path.dirname(DATA_FILE), "video_index.json")
 
 def get_video_id(url):
     """Extrae el ID de video de una URL de YouTube estándar."""
@@ -68,7 +76,8 @@ def generate_index():
 
     for _, row in videos.iterrows():
         resource_id = str(row.get('ID_Recurso', ''))
-        url = row.get('URL', '')
+        # Soporte para columna URL o Ruta_o_URL
+        url = row.get('URL', row.get('Ruta_o_URL', ''))
         
         if not url or not resource_id:
             continue
