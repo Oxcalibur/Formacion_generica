@@ -22,7 +22,9 @@ if not GEMINI_API_KEY:
         pass
 
 # Rutas relativas asumiendo ejecución desde la raíz del proyecto
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if os.path.basename(BASE_DIR) == "scripts":
+    BASE_DIR = os.path.dirname(BASE_DIR)
 
 # Búsqueda robusta del archivo multimedia.csv
 possible_paths = [
@@ -91,9 +93,18 @@ def generate_index():
         
         try:
             # Intentamos obtener subtítulos en español o inglés
-            transcript_list = YouTubeTranscriptApi.get_transcript(yt_id, languages=['es', 'en'])
-            full_text = " ".join([t['text'] for t in transcript_list])
+            # 1. Instanciamos el cliente de la API (Nueva arquitectura requerida)
+            yt_api = YouTubeTranscriptApi()
             
+            # 2. Usamos el método fetch() en lugar del antiguo método estático
+            fetched_transcript = yt_api.fetch(yt_id, languages=['es', 'en'])
+            
+            # 3. Convertimos el nuevo objeto FetchedTranscript a la clásica lista de diccionarios
+            transcript_list = fetched_transcript.to_raw_data() if hasattr(fetched_transcript, 'to_raw_data') else fetched_transcript
+            
+            # 4. Concatenamos el texto
+            full_text = " ".join([t['text'] for t in transcript_list])
+
             # Prompt estricto para Gemini
             prompt = f"""
             Analiza la siguiente transcripción de un video de formación corporativa.
