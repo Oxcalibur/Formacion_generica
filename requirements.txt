@@ -4,3 +4,5 @@ google-genai
 pypdf
 st-gsheets-connection
 plotly
+youtube-transcript-api
+google-api-python-client

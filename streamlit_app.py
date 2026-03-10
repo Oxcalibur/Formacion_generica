@@ -6,8 +6,8 @@ from logic import (
     get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, 
     get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, 
     calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, 
-    graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts, analyze_prompt_patterns,
-    graficar_patrones_prompts, calculate_historical_improvement_rate
+    graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts, analyze_prompt_patterns, graficar_patrones_prompts, 
+    calculate_historical_improvement_rate, load_multimedia_resources
 )
 from auth import get_auth_manager
 
@@ -150,6 +150,14 @@ if mode == "Asistente Formativo":
     st.header(f"Bienvenido, {st.session_state.user_role}")
     st.caption("Pregunta cualquier duda sobre tus materiales de formación.")
 
+    # Cargar recursos locales para poder recomendarlos
+    kb_path = CLIENT_CONFIG.get("knowledge_base_folder", "knowledge_base")
+    if not os.path.isabs(kb_path):
+        kb_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), kb_path)
+    local_resources = load_multimedia_resources(kb_path)
+    if not local_resources:
+        st.info("💡 **Admin Tip:** Para habilitar recomendaciones de contenido, crea un archivo `multimedia.csv` en la carpeta `knowledge_base` con las columnas: `Title, URL, Type, Description`.", icon="ℹ️")
+
     # Inicializar conversación si está vacía
     if not st.session_state.chat_history:
         current_role = st.session_state.get("user_role", "Estudiante")
@@ -160,6 +168,11 @@ if mode == "Asistente Formativo":
     for msg in st.session_state.chat_history:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+            # Revisa si hay recomendaciones en el mensaje y las muestra
+            if msg.get("recommendations"):
+                st.markdown("--- \n**Recursos recomendados:**")
+                for rec in msg["recommendations"]:
+                    st.markdown(f"- **[{rec.get('title', 'Recurso')}]({rec.get('url', '#')})**: {rec.get('reason', 'Recomendado para profundizar en el tema.')}")
 
     # Input de usuario
     if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
@@ -177,27 +190,34 @@ if mode == "Asistente Formativo":
 
         # Guardar y mostrar mensaje usuario
         st.session_state.chat_history.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
 
         # Generar respuesta
-        with st.chat_message("assistant"):
-            with st.spinner("Consultando base de conocimiento..."):
-                base_prompt = CLIENT_CONFIG["system_prompt"].format(client_name=CLIENT_CONFIG["client_name"])
-                
-                # Inyectar el rol actual para modificar el comportamiento de la Fase 1
-                current_role = st.session_state.get("user_role", "Estudiante")
-                role_context = (
-                    f"\n\nCONTEXTO DEL USUARIO:\nCargo/Rol actual: {current_role}\n"
-                    f"INSTRUCCIÓN: El usuario YA tiene el rol '{current_role}'. NO preguntes por el rol. Ve directo a resolver el reto o tema planteado."
-                )
-                
-                full_prompt = base_prompt + role_context
-                response = get_chat_response(st.session_state.chat_history, prompt, full_prompt, st.session_state.knowledge_base)
-                st.markdown(response)
-        
-        st.session_state.chat_history.append({"role": "assistant", "content": response})
+        with st.spinner("Consultando base de conocimiento..."):
+            # Prepara un historial limpio para la IA (sin recomendaciones previas para no contaminar contexto)
+            clean_history = [{"role": m.get("role"), "content": m.get("content")} for m in st.session_state.chat_history]
+            
+            base_prompt = CLIENT_CONFIG["system_prompt"].replace("{client_name}", CLIENT_CONFIG["client_name"])
+            current_role = st.session_state.get("user_role", "Estudiante")
+            role_context = (
+                f"\n\nCONTEXTO DEL USUARIO:\nCargo/Rol actual: {current_role}\n"
+                f"INSTRUCCIÓN: El usuario YA tiene el rol '{current_role}'. NO preguntes por el rol. Ve directo a resolver el reto o tema planteado."
+            )
+            full_prompt = base_prompt + role_context
+            
+            response_data = get_chat_response(
+                clean_history, 
+                prompt, 
+                full_prompt, 
+                st.session_state.knowledge_base,
+                multimedia_index=local_resources
+            )
+            
+            text_response = response_data.get("text", "No he podido generar una respuesta.")
+            recommendations = response_data.get("recommendations", [])
 
+        # Guardar la respuesta estructurada (texto + recomendaciones) en el historial
+        st.session_state.chat_history.append({"role": "assistant", "content": text_response, "recommendations": recommendations})
+        st.rerun()
 # --- Pantalla 2: Dojo (Quiz) ---
 elif mode == "Dojo (Ponerse a prueba)":
     st.header("🥋 El Dojo")
@@ -428,6 +448,22 @@ elif mode == "Gestión de Usuarios (Admin)":
 elif mode == "Registro de Prompts (Admin)":
     st.header("📋 Registro de Prompts")
     st.markdown("Visualización de las consultas realizadas por los usuarios (Anónimo).")
+    
+    with st.expander("📘 Guía Funcional: Ejemplo de Interpretación"):
+        st.markdown("""
+        ### Caso de Uso: Detección de Brechas en Formación de Liderazgo
+        
+        **1. La Situación (El Dato):**
+        Lanzas un curso para nuevos managers. En el **Mapa de Inquietudes**, detectas que el bloque más grande es *"Gestión de Conflictos"*, con preguntas específicas sobre *"Cómo dar feedback a ex-compañeros"*.
+        
+        **2. La Interpretación (El Insight):**
+        El sistema te revela que la **teoría** (los manuales) se ha entendido, pero existe una barrera **emocional/práctica** en la ejecución real.
+        
+        **3. La Decisión (El Valor):**
+        Gracias al **Plan de Acción** generado por la IA, decides no añadir más teoría, sino crear una **"Hoja de Guiones (Scripts)"** para situaciones tensas.
+        
+        *Resultado: Transformas una formación genérica en una solución quirúrgica para un problema real detectado en días, no meses.*
+        """)
     
     worksheet_name = CLIENT_CONFIG.get("prompts_worksheet_name")
     if worksheet_name:

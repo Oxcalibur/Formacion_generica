@@ -114,6 +114,12 @@ def main():
 
     print("\n" + "-"*30)
     response = input("¿Deseas crear una nueva rama desde main? (s/n): ").strip().lower()
+    # Si se pasa el argumento --auto o --no-input, saltamos la creación de rama
+    if len(sys.argv) > 1 and sys.argv[1] in ["--auto", "--no-input"]:
+        response = 'n'
+    else:
+        response = input("¿Deseas crear una nueva rama desde main? (s/n): ").strip().lower()
+        
     if response == 's':
         new_branch = input("Introduce el nombre de la nueva rama: ").strip()
         if new_branch:

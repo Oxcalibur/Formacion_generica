@@ -19,7 +19,7 @@ try:
     import plotly.graph_objects as go
 except ImportError:
     go = None
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import datetime
 
 # Definición de Cinturones (Gamificación)
@@ -107,6 +107,36 @@ def load_knowledge_base(folder_path):
                     st.warning(f"No se pudo leer PDF {filename}: {e}")
     return context_text
 
+def load_multimedia_resources(folder_path):
+    """Carga el índice de recursos multimedia desde un CSV en la base de conocimiento."""
+    if not os.path.exists(folder_path):
+        return []
+        
+    # Prioridad: Índice enriquecido (JSON) generado por generador_indice.py
+    json_index_path = os.path.join(folder_path, "video_index.json")
+    if os.path.exists(json_index_path):
+        try:
+            with open(json_index_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return list(data.values()) # Convertir a lista para el prompt
+        except Exception as e:
+            print(f"Error leyendo video_index.json: {e}")
+
+    possible_files = ["multimedia.csv", "recursos.csv", "resources.csv"]
+    
+    for filename in possible_files:
+        file_path = os.path.join(folder_path, filename)
+        if os.path.exists(file_path):
+            try:
+                # Se espera un CSV con cabeceras: Title, URL, Type, Description (opcional)
+                df = pd.read_csv(file_path)
+                # Rellenar nulos para evitar errores en JSON
+                df = df.fillna("")
+                return df.to_dict(orient="records")
+            except Exception as e:
+                print(f"Error leyendo {filename}: {e}")
+    return []
+
 def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
     """Genera 5 preguntas usando Gemini en formato JSON."""
     from config import CLIENT_CONFIG
@@ -185,16 +215,19 @@ def evaluate_quiz(questions, user_answers):
         
     return score, results
 
-def get_chat_response(history, user_input, system_instruction, knowledge_context=""):
+def get_chat_response(history: list, user_input: str, system_instruction: str, knowledge_context: str = "", multimedia_index: Optional[list] = None) -> dict:
     """Obtiene respuesta del chat de Gemini."""
     from config import CLIENT_CONFIG
     client = init_gemini()
     if not client:
-        return "Modo demostración: Configura tu API Key para chatear con Gemini real."
+        return {"text": "Modo demostración: Configura tu API Key para chatear con Gemini real.", "recommendations": []}
     
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
     
-    full_prompt = f"Instrucción del sistema: {system_instruction}\n\nInformación de Contexto (Base de Conocimiento):\n{knowledge_context}\n\nUsuario: {user_input}"
+    # Serializar y inyectar el índice multimedia en el prompt del sistema
+    local_resources_str = json.dumps(multimedia_index, ensure_ascii=False) if multimedia_index else "No hay recursos locales disponibles."
+    system_instruction = system_instruction.replace("{multimedia_index_placeholder}", local_resources_str)
+
     # Construir historial estructurado para Gemini
     contents = []
     for msg in history:
@@ -216,9 +249,25 @@ def get_chat_response(history, user_input, system_instruction, knowledge_context
                 system_instruction=full_system_instruction
             )
         )
-        return response.text
+        raw_response = response.text
+
+        # Parsear la respuesta para separar texto y recursos
+        text_part = raw_response
+        recommendations = []
+        
+        if "[RESOURCES]" in raw_response:
+            parts = raw_response.split("[RESOURCES]", 1)
+            text_part = parts[0].strip()
+            try:
+                # La parte JSON es el segundo elemento
+                json_str = parts[1].strip()
+                recommendations = json.loads(json_str)
+            except (json.JSONDecodeError, IndexError) as e:
+                print(f"No se pudo parsear los recursos de la respuesta: {e}")
+        
+        return {"text": text_part, "recommendations": recommendations}
     except Exception as e:
-        return f"⚠️ **Error de conexión con la IA:** {e}.\n\nPor favor, verifica que tu API Key en `.streamlit/secrets.toml` sea correcta y válida."
+        return {"text": f"⚠️ **Error de conexión con la IA:** {e}.\n\nPor favor, verifica que tu API Key en `.streamlit/secrets.toml` sea correcta y válida.", "recommendations": []}
 
 def generate_dynamic_roles(knowledge_context):
     """Genera roles/niveles jerárquicos basados en el contenido."""

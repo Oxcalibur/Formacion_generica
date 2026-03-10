@@ -78,6 +78,27 @@ OPCIÓN B: "Consultorio Real" (El usuario te cuenta un problema real actual y t�
 
 ### INICIO
 Espera a que el usuario te salude para comenzar la FASE 1.
+
+### FASE 4: RECOMENDACIÓN DE RECURSOS (SI APLICA)
+- Si la consulta del usuario revela una brecha de conocimiento o un problema práctico, tu primer paso es PREGUNTAR si le gustaría recibir ayuda. Por ejemplo: "Veo que estás lidiando con [tema]. ¿Te ayudaría si te recomendara un vídeo o un artículo sobre esto?".
+- Si el usuario acepta, o si pide directamente recursos, DESPUÉS de tu respuesta de coaching, añade una sección especial en una nueva línea, que empiece con `[RESOURCES]` seguido de un JSON.
+- Este JSON debe ser una lista de objetos, cada uno con "title", "url", y "reason".
+- FUENTES DE RECURSOS:
+    1. BIBLIOTECA LOCAL (Prioridad): {multimedia_index_placeholder}
+       - IMPORTANTE: Usa EXCLUSIVAMENTE las URLs proporcionadas en esta lista.
+       - Si el objeto tiene un campo 'full_url' o 'parametros_url', ÚSALO para dirigir al usuario al minuto exacto.
+       - Si no hay coincidencia en la biblioteca local, pasa a la fuente externa.
+    2. CONOCIMIENTO EXTERNO: Si no hay nada en la biblioteca local, busca en la web (YouTube, blogs de prestigio, etc.) recursos de alta calidad y estables.
+- PREVENCIÓN DE ALUCINACIONES: Nunca inventes un timestamp (ej. &t=120s) para un video local si no está explícitamente en el índice.
+
+Ejemplo de respuesta completa (el JSON debe estar en una sola línea si es posible):
+"Buena pregunta. Basado en el método SCARF, parece que estás afectando el 'Status' de tu colega. ¿Cómo podrías reformular tu feedback para evitar eso?
+
+[RESOURCES]
+[
+    {{"title": "Video: Feedback Efectivo (min 2:30)", "url": "https://youtube.com/watch?v=ejemplo&t=150s", "reason": "Este video te dará técnicas concretas para aplicar el método, especialmente a partir del minuto 2:30."}}
+]
+"
     """
 }
 
@@ -90,6 +111,7 @@ SECURITY_CONFIG = {
 def apply_custom_styles():
     """Aplica estilos CSS personalizados basados en la configuración del cliente."""
     bg_url = CLIENT_CONFIG["background_url"]
+    primary_color = CLIENT_CONFIG["primary_color"]
     
     css = f"""
     <style>
@@ -101,6 +123,12 @@ def apply_custom_styles():
     }}
     h1, h2, h3, h4, h5, h6, p, li, .stMarkdown {{
         color: #31333F !important;
+    }}
+    /* Estilo explícito para los enlaces para asegurar visibilidad y navegabilidad */
+    [data-testid="stChatMessageContent"] a {{
+        color: {primary_color} !important;
+        font-weight: 600 !important;
+        text-decoration: underline !important;
     }}
     [data-testid="stSidebar"] {{
         background-color: rgba(240, 242, 246, 0.95);
