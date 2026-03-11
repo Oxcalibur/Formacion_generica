@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Optional
+from typing import Optional, List, Dict, Union
 
 # Importación segura para entornos donde no se requiera búsqueda externa
 try:
@@ -63,7 +63,7 @@ def buscar_biblioteca_local(tema: str) -> str:
     
     return output
 
-def buscar_youtube_externo(tema: str) -> str:
+def buscar_youtube_externo(tema: str) -> Union[str, List[Dict[str, str]]]:
     """
     Realiza una búsqueda en YouTube (Internet abierto) para encontrar material complementario.
     Útil cuando la biblioteca local no cubre el tema solicitado.
@@ -72,7 +72,8 @@ def buscar_youtube_externo(tema: str) -> str:
         tema (str): El tema a buscar.
 
     Returns:
-        str: Los 2 mejores videos encontrados con Título, Canal y URL, o "ERROR_EXTERNAL_SEARCH".
+        Union[str, List[Dict[str, str]]]: Una lista de diccionarios con los videos encontrados, 
+                                          o un string indicando error o no resultados.
     """
     if not build:
         return "ERROR_EXTERNAL_SEARCH (Library google-api-python-client missing)"
@@ -100,16 +101,20 @@ def buscar_youtube_externo(tema: str) -> str:
         if not items:
             return "NO_EXTERNAL_RESULTS"
             
-        output = "Resultados externos recomendados (YouTube):\n"
+        resultados = []
         for item in items:
             title = item["snippet"]["title"]
             channel = item["snippet"]["channelTitle"]
             video_id = item["id"]["videoId"]
             url = f"https://www.youtube.com/watch?v={video_id}"
             
-            output += f"- VIDEO: {title} ({channel})\n  URL: {url}\n"
+            resultados.append({
+                "title": f"{title} ({channel})",
+                "url": url,
+                "reason": f"Video externo recomendado sobre '{tema}'."
+            })
             
-        return output
+        return resultados
 
     except Exception as e:
         print(f"Error en búsqueda externa: {e}")

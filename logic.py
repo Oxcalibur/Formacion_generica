@@ -12,6 +12,10 @@ try:
 except ImportError:
     GSheetsConnection = None
 import pandas as pd
+try:
+    from herramientas_busqueda import buscar_youtube_externo
+except ImportError:
+    buscar_youtube_externo = None
 import streamlit as st
 import json
 import os
@@ -228,6 +232,16 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
     local_resources_str = json.dumps(multimedia_index, ensure_ascii=False) if multimedia_index else "No hay recursos locales disponibles."
     system_instruction = system_instruction.replace("{multimedia_index_placeholder}", local_resources_str)
 
+    # Instrucciones para activar la búsqueda externa real
+    external_hint = (
+        "\n\n[MECANISMO DE BÚSQUEDA EXTERNA]\n"
+        "Si necesitas recomendar un video de YouTube y NO está en la biblioteca local:\n"
+        "1. NO inventes la URL.\n"
+        "2. Usa este formato especial en el campo 'url': 'SEARCH_EXTERNAL: <términos de búsqueda>'.\n"
+        "   Ejemplo: {'title': 'Video sobre Liderazgo', 'url': 'SEARCH_EXTERNAL: liderazgo situacional', 'reason': '...'}\n"
+        "3. El sistema interceptará esta instrucción y buscará el video real por ti."
+    )
+
     # Construir historial estructurado para Gemini
     contents = []
     for msg in history:
@@ -239,7 +253,7 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
             )
         )
     
-    full_system_instruction = f"{system_instruction}\n\nInformación de Contexto (Base de Conocimiento):\n{knowledge_context}"
+    full_system_instruction = f"{system_instruction}{external_hint}\n\nInformación de Contexto (Base de Conocimiento):\n{knowledge_context}"
     
     try:
         response = client.models.generate_content(
@@ -261,7 +275,19 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
             try:
                 # La parte JSON es el segundo elemento
                 json_str = parts[1].strip()
-                recommendations = json.loads(json_str)
+                initial_recs = json.loads(json_str)
+                
+                # Procesar y expandir búsquedas externas
+                for rec in initial_recs:
+                    url = rec.get("url", "")
+                    if "SEARCH_EXTERNAL:" in url:
+                        query = url.split("SEARCH_EXTERNAL:", 1)[1].strip()
+                        if buscar_youtube_externo:
+                            external_results = buscar_youtube_externo(query)
+                            if isinstance(external_results, list):
+                                recommendations.extend(external_results)
+                    else:
+                        recommendations.append(rec)
             except (json.JSONDecodeError, IndexError) as e:
                 print(f"No se pudo parsear los recursos de la respuesta: {e}")
         
