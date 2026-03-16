@@ -288,6 +288,20 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
                                 recommendations.extend(external_results)
                     else:
                         recommendations.append(rec)
+                
+                # Limpieza de bloques de código Markdown si existen
+                if "```" in json_str:
+                    json_str = json_str.replace("```json", "").replace("```", "")
+                
+                # Buscar el inicio de la lista JSON y usar raw_decode para ignorar extra data al final
+                start_idx = json_str.find('[')
+                
+                if start_idx != -1:
+                    json_str = json_str[start_idx:]
+                    decoder = json.JSONDecoder()
+                    recommendations, _ = decoder.raw_decode(json_str)
+                else:
+                    recommendations = []
             except (json.JSONDecodeError, IndexError) as e:
                 print(f"No se pudo parsear los recursos de la respuesta: {e}")
         
