@@ -1,1 +1,56 @@
-{}
+{
+    "VID-LIDERAZGO-01": {
+        "tema_clave": "Liderazgo y Transición de Roles en Empresas",
+        "conceptos_secundarios": [
+            "Diferencia entre liderazgo y gestión",
+            "Importancia de la capacitación en liderazgo",
+            "El poder de la gente en las organizaciones",
+            "Errores comunes en la definición de liderazgo",
+            "Transición de la responsabilidad individual a la responsabilidad por el equipo",
+            "Influencia de los stakeholders y la falta de coraje en el liderazgo",
+            "División del personal como herramienta de control",
+            "La falsa idea de que el CEO solo debe enfocarse en resultados"
+        ],
+        "nivel_dificultad": "Intermedio",
+        "perfil_ideal": "Managers, Líderes de equipo, Profesionales en RRHH, Directores, Consultores",
+        "contexto_uso": "Este video es útil para empleados que están siendo promovidos a roles de liderazgo o para aquellos que buscan mejorar sus habilidades de liderazgo y comprender cómo construir equipos efectivos.",
+        "timestamp_inicio": "0:46",
+        "timestamp_fin": "2:58",
+        "parametros_url": "&t=46s",
+        "resumen_ejecutivo": "El video explora la diferencia entre ser un líder y un manager, destacando la importancia de capacitar a los empleados en habilidades de liderazgo. Subraya cómo los líderes deben priorizar el cuidado de su gente para que estos impulsen el éxito del negocio.",
+        "resumen_detallado": "Simon Sinek explica que el liderazgo es una práctica y una elección de cuidar a los que te rodean, contrastándolo con la mera gestión basada en la autoridad.  El video aborda cómo las empresas fallan al no capacitar a sus empleados en habilidades de liderazgo a medida que ascienden, especialmente en la transición de ser responsables del trabajo a ser responsables de las personas que hacen el trabajo. Se critica la excusa de que los CEOs deben enfocarse solo en los resultados debido a las presiones de los stakeholders, argumentando que esto denota una falta de coraje y una mala comprensión del verdadero rol del líder, quien debe empoderar y cuidar a su equipo.",
+        "original_url": "https://www.youtube.com/watch?v=KQlPxed2GtI",
+        "full_url": "https://www.youtube.com/watch?v=KQlPxed2GtI&t=46s"
+    },
+    "VID-LIDERAZGO-02": {
+        "tema_clave": "Vulnerabilidad y Vergüenza en el Liderazgo y la Innovación",
+        "conceptos_secundarios": [
+            "Vulnerabilidad vs. Debilidad",
+            "Coraje",
+            "Riesgo Emocional",
+            "Exposición",
+            "Incertidumbre",
+            "Innovación",
+            "Creatividad",
+            "Cambio",
+            "Vergüenza",
+            "Empatía",
+            "Género",
+            "Guilt vs Shame",
+            "Conexión",
+            "Liderazgo",
+            "Resiliencia",
+            "Autenticidad"
+        ],
+        "nivel_dificultad": "Intermedio",
+        "perfil_ideal": "Líderes, Managers, Emprendedores, Profesionales de Recursos Humanos, Consultores, cualquier persona interesada en el crecimiento personal y profesional",
+        "contexto_uso": "Este video es útil para empleados que buscan mejorar su liderazgo, fomentar la innovación en sus equipos, y entender cómo la vulnerabilidad y la vergüenza impactan el rendimiento y la cultura organizacional. También es relevante para aquellos que buscan desarrollar mayor empatía y autenticidad en sus interacciones profesionales.",
+        "timestamp_inicio": "00:11",
+        "timestamp_fin": "01:00",
+        "parametros_url": "&t=11s",
+        "resumen_ejecutivo": "La vulnerabilidad es esencial para el coraje, la innovación y el cambio, desafiando la percepción de que es una debilidad. La vergüenza, un obstáculo significativo, debe ser entendida y abordada con empatía para fomentar la conexión y el crecimiento.",
+        "resumen_detallado": "Este video explora la importancia de la vulnerabilidad como catalizador para el coraje, la innovación y el cambio, argumentando que desafía la creencia común de que es una debilidad. Se sumerge en el concepto de la vergüenza, destacando cómo impacta negativamente el comportamiento y las relaciones, y cómo la empatía puede ser utilizada como un antídoto. La charla también aborda las diferencias de género en la experiencia de la vergüenza y subraya la necesidad de crear entornos seguros donde las personas puedan ser auténticas y conectarse a un nivel más profundo para impulsar el éxito tanto personal como profesional.",
+        "original_url": "https://www.youtube.com/watch?v=g_AYX-7qmxY",
+        "full_url": "https://www.youtube.com/watch?v=g_AYX-7qmxY&t=11s"
+    }
+}
