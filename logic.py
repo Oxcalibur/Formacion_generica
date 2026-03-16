@@ -235,11 +235,12 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
     # Instrucciones para activar la búsqueda externa real
     external_hint = (
         "\n\n[MECANISMO DE BÚSQUEDA EXTERNA]\n"
-        "Si necesitas recomendar un video de YouTube y NO está en la biblioteca local:\n"
-        "1. NO inventes la URL.\n"
-        "2. Usa este formato especial en el campo 'url': 'SEARCH_EXTERNAL: <términos de búsqueda>'.\n"
-        "   Ejemplo: {'title': 'Video sobre Liderazgo', 'url': 'SEARCH_EXTERNAL: liderazgo situacional', 'reason': '...'}\n"
-        "3. El sistema interceptará esta instrucción y buscará el video real por ti."
+        "Si el tema EXACTO no está en la biblioteca local, es OBLIGATORIO que uses la búsqueda externa.\n"
+        "1. NO generes enlaces Markdown como `Título`. NO sugieras al usuario que busque por su cuenta.\n"
+        "2. DEBES usar el formato de bloque `[RESOURCES]` con un JSON dentro.\n"
+        "3. El sistema se encargará de la búsqueda real. Tú solo debes generar la instrucción JSON.\n"
+        "   FORMATO CORRECTO: `[RESOURCES]\n[{\"title\": \"Video sobre Storytelling\", \"url\": \"SEARCH_EXTERNAL: storytelling para negocios\", \"reason\": \"...\"}]`\n"
+        "   FORMATO INCORRECTO: `Recursos recomendados: Video sobre Storytelling`"
     )
 
     # Construir historial estructurado para Gemini
@@ -273,35 +274,32 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
             parts = raw_response.split("[RESOURCES]", 1)
             text_part = parts[0].strip()
             try:
-                # La parte JSON es el segundo elemento
                 json_str = parts[1].strip()
-                initial_recs = json.loads(json_str)
-                
-                # Procesar y expandir búsquedas externas
-                for rec in initial_recs:
-                    url = rec.get("url", "")
-                    if "SEARCH_EXTERNAL:" in url:
-                        query = url.split("SEARCH_EXTERNAL:", 1)[1].strip()
-                        if buscar_youtube_externo:
-                            external_results = buscar_youtube_externo(query)
-                            if isinstance(external_results, list):
-                                recommendations.extend(external_results)
-                    else:
-                        recommendations.append(rec)
-                
-                # Limpieza de bloques de código Markdown si existen
+
+                # Limpieza de bloques de código Markdown si el modelo los añade
                 if "```" in json_str:
-                    json_str = json_str.replace("```json", "").replace("```", "")
-                
-                # Buscar el inicio de la lista JSON y usar raw_decode para ignorar extra data al final
+                    json_str = json_str.replace("```json", "").replace("```", "").strip()
+
+                # Buscar el inicio de la lista JSON y usar raw_decode para ignorar texto extra
                 start_idx = json_str.find('[')
-                
                 if start_idx != -1:
-                    json_str = json_str[start_idx:]
+                    json_data_str = json_str[start_idx:]
                     decoder = json.JSONDecoder()
-                    recommendations, _ = decoder.raw_decode(json_str)
+                    initial_recs, _ = decoder.raw_decode(json_data_str)
+                    
+                    # Ahora, procesar y expandir búsquedas externas
+                    for rec in initial_recs:
+                        url = rec.get("url", "")
+                        if isinstance(url, str) and "SEARCH_EXTERNAL:" in url:
+                            query = url.split("SEARCH_EXTERNAL:", 1)[1].strip()
+                            if buscar_youtube_externo:
+                                external_results = buscar_youtube_externo(query)
+                                if isinstance(external_results, list):
+                                    recommendations.extend(external_results)
+                        else:
+                            recommendations.append(rec)
                 else:
-                    recommendations = []
+                    pass # No se encontró un array JSON válido
             except (json.JSONDecodeError, IndexError) as e:
                 print(f"No se pudo parsear los recursos de la respuesta: {e}")
         
