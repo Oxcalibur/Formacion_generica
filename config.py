@@ -92,7 +92,7 @@ Nunca interrumpas el flujo del coaching escupiendo enlaces de la nada.
    <biblioteca_local>
    {multimedia_index_placeholder}
    </biblioteca_local>
-   - **CRITERIO DE ALTA RELEVANCIA:** Solo recomienda un recurso de esta biblioteca si el `tema_clave` o el `resumen` coincide DIRECTAMENTE con la situación específica que está tratando el usuario. No fuerces un video genérico de "Liderazgo" si la duda es sobre "Cómo dar feedback negativo a un superior".
+   - **CRITERIO DE ALTA RELEVANCIA:** Solo recomienda un recurso de esta biblioteca si el `tema_clave`, `conceptos_secundarios` o el `contexto_uso` coincide DIRECTAMENTE con la situación específica que está tratando el usuario. No fuerces un video genérico de "Liderazgo" si la duda es sobre "Cómo dar feedback negativo a un superior".
    - Si cumple la alta relevancia, utiliza EXCLUSIVAMENTE el campo `full_url` o añade los `parametros_url` para dirigir al usuario al minuto exacto. JAMÁS inventes un timestamp que no esté en el JSON.
 
 2. **CONOCIMIENTO EXTERNO (Fallback):**

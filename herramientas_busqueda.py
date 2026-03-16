@@ -45,10 +45,12 @@ def buscar_biblioteca_local(tema: str) -> str:
     # Búsqueda lineal simple en el índice JSON
     for video_id, data in index.items():
         tema_clave = data.get("tema_clave", "").lower()
-        resumen = data.get("resumen", "").lower()
+        resumen = data.get("resumen_ejecutivo", data.get("resumen", "")).lower()
+        conceptos = " ".join(data.get("conceptos_secundarios", [])).lower()
+        contexto = data.get("contexto_uso", "").lower()
         
-        # Coincidencia laxa en tema o resumen
-        if tema_lower in tema_clave or tema_lower in resumen:
+        # Coincidencia laxa en tema, resumen, conceptos o contexto
+        if tema_lower in tema_clave or tema_lower in resumen or tema_lower in conceptos or tema_lower in contexto:
             resultados.append(data)
 
     if not resultados:
@@ -58,7 +60,10 @@ def buscar_biblioteca_local(tema: str) -> str:
     output = f"Recursos encontrados en biblioteca local para '{tema}':\n"
     for res in resultados[:3]: # Limitamos a 3 para no saturar contexto
         output += f"- TEMA: {res.get('tema_clave')}\n"
-        output += f"  RESUMEN: {res.get('resumen')}\n"
+        output += f"  CONCEPTOS: {', '.join(res.get('conceptos_secundarios', []))}\n"
+        output += f"  PERFIL: {res.get('perfil_ideal')} (Nivel: {res.get('nivel_dificultad')})\n"
+        output += f"  CONTEXTO DE USO: {res.get('contexto_uso')}\n"
+        output += f"  RESUMEN: {res.get('resumen_ejecutivo', res.get('resumen', ''))}\n"
         output += f"  URL DIRECTA: {res.get('full_url')}\n\n"
     
     return output

@@ -108,16 +108,21 @@ def generate_index():
             # Prompt estricto para Gemini
             prompt = f"""
             Analiza la siguiente transcripción de un video de formación corporativa.
-            Genera metadatos JSON estrictos para indexación.
+            Genera metadatos JSON estrictos para indexación con alto nivel de detalle.
             
             TRANSCRIPCIÓN (Fragmento):
             {full_text[:25000]} 
             
             INSTRUCCIONES:
             1. Identifica el 'tema_clave' principal.
-            2. Encuentra el momento (timestamp) más relevante donde empieza la explicación clave.
-            3. Genera un 'resumen' ejecutivo de 2 líneas.
-            4. Devuelve SOLO JSON con claves: tema_clave, timestamp_inicio, timestamp_fin, parametros_url (ej. "&t=120s"), resumen.
+            2. Extrae una lista de 'conceptos_secundarios' tratados en el video.
+            3. Define el 'nivel_dificultad' (Principiante, Intermedio, Avanzado).
+            4. Define el 'perfil_ideal' (ej. Manager, Consultor, Liderazgo, General).
+            5. Explica el 'contexto_uso' (En qué situación específica un empleado debería ver este video).
+            6. Encuentra el momento (timestamp) más relevante donde empieza la explicación clave y su fin ('timestamp_inicio' y 'timestamp_fin').
+            7. Genera un 'resumen_ejecutivo' de 2 líneas y un 'resumen_detallado' de 1 párrafo.
+            8. Genera los 'parametros_url' con el formato exacto del inicio (ej. "&t=120s").
+            9. Devuelve SOLO JSON con claves: tema_clave, conceptos_secundarios (lista), nivel_dificultad, perfil_ideal, contexto_uso, timestamp_inicio, timestamp_fin, parametros_url, resumen_ejecutivo, resumen_detallado.
             """
 
             response = client.models.generate_content(
