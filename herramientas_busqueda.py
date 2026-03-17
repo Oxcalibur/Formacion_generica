@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Optional, List, Dict, Union
+from typing import List, Dict, Union
 
 # Importación segura para entornos donde no se requiera búsqueda externa
 try:

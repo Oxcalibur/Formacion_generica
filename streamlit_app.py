@@ -4,7 +4,7 @@ import os
 from config import CLIENT_CONFIG, SECURITY_CONFIG, apply_custom_styles
 from logic import (
     get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, 
-    get_chat_response, load_knowledge_base, generate_dynamic_roles, generate_dynamic_topics, 
+    get_chat_response, load_knowledge_base, generate_dynamic_topics, 
     calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, 
     graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts, analyze_prompt_patterns, graficar_patrones_prompts, 
     calculate_historical_improvement_rate, load_multimedia_resources
@@ -39,8 +39,6 @@ if "knowledge_base" not in st.session_state or not st.session_state.knowledge_ba
     if not os.path.isabs(kb_path):
         kb_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), kb_path)
     st.session_state.knowledge_base = load_knowledge_base(kb_path)
-if "dynamic_roles" not in st.session_state:
-    st.session_state.dynamic_roles = []
 if "dynamic_topics" not in st.session_state:
     st.session_state.dynamic_topics = []
 
@@ -112,12 +110,6 @@ with st.sidebar:
         st.success(f"📚 Base de conocimiento conectada")
     else:
         st.warning("⚠️ Base de conocimiento vacía")
-    
-    # Selector de Rol (Oculto por solicitud, ahora se gestiona en 'Mi Puesto / Rol')
-    # st.session_state.user_role = st.selectbox(
-    #     "Tu Nivel / Rol", 
-    #     st.session_state.dynamic_roles
-    # )
     
     st.divider()
     

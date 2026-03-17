@@ -25,6 +25,7 @@ except ImportError:
     go = None
 from typing import List, Dict, Any, Optional
 import datetime
+from config import CLIENT_CONFIG
 
 # Definición de Cinturones (Gamificación)
 BELTS = [
@@ -144,7 +145,6 @@ def load_multimedia_resources(folder_path):
 
 def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
     """Genera 5 preguntas usando Gemini en formato JSON."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     if not client:
         # Retorno Mock si no hay API Key para que la app no rompa al probar
@@ -222,7 +222,6 @@ def evaluate_quiz(questions, user_answers):
 
 def get_chat_response(history: list, user_input: str, system_instruction: str, knowledge_context: str = "", multimedia_index: Optional[list] = None) -> dict:
     """Obtiene respuesta del chat de Gemini."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     if not client:
         return {"text": "Modo demostración: Configura tu API Key para chatear con Gemini real.", "recommendations": []}
@@ -310,7 +309,6 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
 
 def generate_dynamic_roles(knowledge_context):
     """Genera roles/niveles jerárquicos basados en el contenido."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     # Roles por defecto si falla la IA o no hay contenido
     default_roles = ["Principiante", "Intermedio", "Avanzado", "Experto"]
@@ -350,7 +348,6 @@ def generate_dynamic_roles(knowledge_context):
 
 def generate_dynamic_topics(knowledge_context):
     """Genera temas de examen basados en el contenido."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     default_topics = ["Conocimiento General"]
     
@@ -647,7 +644,6 @@ def graficar_impacto_aprendizaje(df: pd.DataFrame):
 
 def analyze_prompt_patterns(prompts_list):
     """Analiza una lista de prompts para identificar patrones, temáticas e inquietudes."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     if not client or not prompts_list:
         return []
@@ -676,13 +672,13 @@ def analyze_prompt_patterns(prompts_list):
     
     SALIDA JSON (Lista de objetos):
     [
-        {
+        {{
             "rol": "Manager",
             "tematica": "Gestión de Stakeholders",
             "inquietud": "Mapa de Empatía",
             "frecuencia": 2,
             "ejemplos": ["prompt 1", "prompt 2"]
-        }
+        }}
     ]
     """
 
@@ -791,7 +787,6 @@ def graficar_patrones_prompts(data):
 
 def generate_action_plan(patterns, focus="Global", knowledge_context=""):
     """Genera un plan de acción estratégico basado en los patrones de inquietudes."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     if not client:
         return "⚠️ Error: No se pudo conectar con el motor de IA para generar el plan."
