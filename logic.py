@@ -85,6 +85,7 @@ def init_gemini():
     
     return genai.Client(api_key=api_key)
 
+@st.cache_data(show_spinner=False)
 def load_knowledge_base(folder_path):
     """Lee archivos de texto de la carpeta especificada para crear el contexto."""
     context_text = ""
@@ -307,6 +308,7 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
     except Exception as e:
         return {"text": f"⚠️ **Error de conexión con la IA:** {e}.\n\nPor favor, verifica que tu API Key en `.streamlit/secrets.toml` sea correcta y válida.", "recommendations": []}
 
+@st.cache_data(show_spinner=False, ttl=86400)
 def generate_dynamic_roles(knowledge_context):
     """Genera roles/niveles jerárquicos basados en el contenido."""
     client = init_gemini()
@@ -346,6 +348,7 @@ def generate_dynamic_roles(knowledge_context):
         print(f"Error generando roles dinámicos: {e}")
         return default_roles
 
+@st.cache_data(show_spinner=False, ttl=86400)
 def generate_dynamic_topics(knowledge_context):
     """Genera temas de examen basados en el contenido."""
     client = init_gemini()
