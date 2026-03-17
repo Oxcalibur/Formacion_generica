@@ -108,7 +108,7 @@ with st.sidebar:
             st.rerun()
             
     # Indicador de estado de la Base de Conocimiento
-    if st.session_state.knowledge_base:
+    if st.session_state.get("knowledge_base"):
         st.success(f"📚 Base de conocimiento conectada")
     else:
         st.warning("⚠️ Base de conocimiento vacía")
@@ -208,7 +208,7 @@ if mode == "Asistente Formativo":
                 clean_history, 
                 prompt, 
                 full_prompt, 
-                st.session_state.knowledge_base,
+                knowledge_context=st.session_state.knowledge_base,
                 multimedia_index=local_resources
             )
             
@@ -582,6 +582,9 @@ elif mode == "Registro de Prompts (Admin)":
                     if st.session_state.get("gen_plan_clicked", False):
                         with st.spinner(f"Diseñando estrategia para: {selection}..."):
                             from logic import generate_action_plan
+                            kb_path = CLIENT_CONFIG.get("knowledge_base_folder", "knowledge_base")
+                            if not os.path.isabs(kb_path):
+                                kb_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), kb_path)
                             # Pasamos la base de conocimiento para que la IA reconozca metodologías específicas (ej. SCARF)
                             plan = generate_action_plan(filtered_patterns, focus=selection, knowledge_context=st.session_state.knowledge_base)
                             st.info(f"Estrategia generada para: **{selection}**")

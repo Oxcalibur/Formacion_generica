@@ -111,6 +111,7 @@ def load_knowledge_base(folder_path):
                     st.warning(f"No se pudo leer PDF {filename}: {e}")
     return context_text
 
+@st.cache_data(show_spinner=False)
 def load_multimedia_resources(folder_path):
     """Carga el índice de recursos multimedia desde un CSV en la base de conocimiento."""
     if not os.path.exists(folder_path):
@@ -179,7 +180,7 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
     
     Ejemplo de estructura JSON requerida:
     [
-        {"question": "¿Qué es X?", "options": ["A", "B", "C"], "answer": "A"}
+        {{"question": "¿Qué es X?", "options": ["A", "B", "C"], "answer": "A"}}
     ]
     """
     
@@ -193,7 +194,7 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
         )
         text_response = response.text
         return json.loads(text_response)
-    except Exception as e:
+    except (json.JSONDecodeError, Exception) as e:
         st.error(f"Error generando preguntas: {e}")
         return []
 
