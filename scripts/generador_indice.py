@@ -58,7 +58,10 @@ def extract_generic_metadata(url):
         return f"URL: {url}\n(No se pudo inspeccionar la web por falta de librerías. Intenta deducir de qué trata por el link)."
         
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
+        }
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -159,7 +162,8 @@ def generate_index():
         INFORMACIÓN EXTRAÍDA DE LA URL:
         {contexto_extraido} 
         
-        INSTRUCCIONES ESTRUCTURALES:
+        INSTRUCCIONES ESTRUCTURALES Y DE IDIOMA:
+        0. IDIOMA OBLIGATORIO: Todo el contenido generado en el JSON DEBE estar estrictamente en ESPAÑOL (Castellano). Si la información extraída está en inglés u otro idioma, tradúcela al generar los resúmenes y temas.
         1. Identifica el 'tema_clave' principal.
         2. Extrae una lista de 'conceptos_secundarios'.
         3. Define el 'nivel_dificultad' (Principiante, Intermedio, Avanzado).
