@@ -1,3 +1,12 @@
 [theme]
 base="light"
 primaryColor="#00a8e8"
+[server]
+# Aumenta el número de hilos concurrentes que procesan a los usuarios
+maxThreads = 50
+# Libera memoria de forma más agresiva cuando un usuario cierra la pestaña
+runOnSave = false
+
+[client]
+# Desactiva elementos de desarrollo que consumen ancho de banda
+toolbarMode = "viewer"

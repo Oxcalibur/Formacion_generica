@@ -5,7 +5,13 @@ import subprocess
 # --- CONFIGURACIÓN ---
 # Carpetas y ficheros que no deben ser modificados por la fusión con main 
 # (se mantiene la versión de la rama destino/local)
-PROTECTED_PATHS = ["knowledge_base", "images", "data/puntuaciones.json"]
+PROTECTED_PATHS = [
+    "knowledge_base", 
+    "images", 
+    "data/puntuaciones.json",
+    "data/multimedia.csv",  # Protege el origen de datos multimedia si está en data
+    "data/video_index.json" # Protege el índice generado si está en data
+]
 SCRIPT_NAME = os.path.basename(__file__)
 
 def run_cmd(cmd, exit_on_error=False):
@@ -114,6 +120,12 @@ def main():
 
     print("\n" + "-"*30)
     response = input("¿Deseas crear una nueva rama desde main? (s/n): ").strip().lower()
+    # Si se pasa el argumento --auto o --no-input, saltamos la creación de rama
+    if len(sys.argv) > 1 and sys.argv[1] in ["--auto", "--no-input"]:
+        response = 'n'
+    else:
+        response = input("¿Deseas crear una nueva rama desde main? (s/n): ").strip().lower()
+        
     if response == 's':
         new_branch = input("Introduce el nombre de la nueva rama: ").strip()
         if new_branch:
