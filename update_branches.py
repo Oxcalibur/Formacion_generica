@@ -151,7 +151,6 @@ def main():
             if hasattr(e, 'stderr'):
                 print(f"      Error: {e.stderr}")
             continue
-
         print(f"   Fusionando 'main' en '{branch}'...")
         proc = subprocess.run(
             "git merge main --no-commit", 
