@@ -119,7 +119,6 @@ def main():
         sys.exit(1)
 
     print("\n" + "-"*30)
-    response = input("¿Deseas crear una nueva rama desde main? (s/n): ").strip().lower()
     # Si se pasa el argumento --auto o --no-input, saltamos la creación de rama
     if len(sys.argv) > 1 and sys.argv[1] in ["--auto", "--no-input"]:
         response = 'n'
@@ -200,6 +199,8 @@ def main():
                 try:
                     run_cmd(f"git push origin {branch}")
                     print(f"   ☁️  ¡Rama '{branch}' sincronizada en la nube con éxito!")
+                except subprocess.CalledProcessError as push_error:
+                    print(f"   ❌ Guardado localmente, pero falló la subida a GitHub:\n      {push_error.stderr.strip()}")
                 except Exception as push_error:
                     print(f"   ❌ Guardado localmente, pero falló la subida a GitHub: {push_error}")
 
@@ -213,8 +214,11 @@ def main():
                  subprocess.run("git merge --abort", shell=True)
                  
             print(f"   🚀 Asegurando actualización en GitHub...")
-            subprocess.run(f"git push origin '{branch}'", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            print(f"   ☁️  Rama '{branch}' comprobada y online.")
+            push_proc = subprocess.run(f"git push origin '{branch}'", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            if push_proc.returncode == 0:
+                print(f"   ☁️  Rama '{branch}' comprobada y online.")
+            else:
+                print(f"   ⚠️  Aviso: no se pudo sincronizar en remoto:\n      {push_proc.stderr.strip()}")
 
     print("\n" + "-"*30)
     run_cmd("git checkout main")
