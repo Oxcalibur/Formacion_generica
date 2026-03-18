@@ -150,6 +150,18 @@ def main():
             if hasattr(e, 'stderr'):
                 print(f"      Error: {e.stderr}")
             continue
+            
+        print(f"   Sincronizando '{branch}' con remoto...")
+        pull_proc = subprocess.run(
+            f"git pull origin '{branch}' --no-edit", 
+            shell=True, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE, 
+            text=True
+        )
+        if pull_proc.returncode != 0 and "couldn't find remote ref" not in pull_proc.stderr:
+            print(f"   ⚠️ Aviso: Falló el pull previo de '{branch}'. Puede que haya conflictos en la nube:\n      {pull_proc.stderr.strip()}")
+
         print(f"   Fusionando 'main' en '{branch}'...")
         proc = subprocess.run(
             "git merge main --no-commit", 
