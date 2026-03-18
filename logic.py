@@ -12,6 +12,10 @@ try:
 except ImportError:
     GSheetsConnection = None
 import pandas as pd
+try:
+    from herramientas_busqueda import buscar_youtube_externo
+except ImportError:
+    buscar_youtube_externo = None
 import streamlit as st
 import json
 import os
@@ -19,8 +23,9 @@ try:
     import plotly.graph_objects as go
 except ImportError:
     go = None
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import datetime
+from config import CLIENT_CONFIG
 
 # Definición de Cinturones (Gamificación)
 BELTS = [
@@ -80,6 +85,7 @@ def init_gemini():
     
     return genai.Client(api_key=api_key)
 
+@st.cache_data(show_spinner=False)
 def load_knowledge_base(folder_path):
     """Lee archivos de texto de la carpeta especificada para crear el contexto."""
     context_text = ""
@@ -107,9 +113,39 @@ def load_knowledge_base(folder_path):
                     st.warning(f"No se pudo leer PDF {filename}: {e}")
     return context_text
 
+@st.cache_data(show_spinner=False)
+def load_multimedia_resources(folder_path):
+    """Carga el índice de recursos multimedia desde un CSV en la base de conocimiento."""
+    if not os.path.exists(folder_path):
+        return []
+        
+    # Prioridad: Índice enriquecido (JSON) generado por generador_indice.py
+    json_index_path = os.path.join(folder_path, "video_index.json")
+    if os.path.exists(json_index_path):
+        try:
+            with open(json_index_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return list(data.values()) # Convertir a lista para el prompt
+        except Exception as e:
+            print(f"Error leyendo video_index.json: {e}")
+
+    possible_files = ["multimedia.csv", "recursos.csv", "resources.csv"]
+    
+    for filename in possible_files:
+        file_path = os.path.join(folder_path, filename)
+        if os.path.exists(file_path):
+            try:
+                # Se espera un CSV con cabeceras: Title, URL, Type, Description (opcional)
+                df = pd.read_csv(file_path)
+                # Rellenar nulos para evitar errores en JSON
+                df = df.fillna("")
+                return df.to_dict(orient="records")
+            except Exception as e:
+                print(f"Error leyendo {filename}: {e}")
+    return []
+
 def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
     """Genera 5 preguntas usando Gemini en formato JSON."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     if not client:
         # Retorno Mock si no hay API Key para que la app no rompa al probar
@@ -159,7 +195,7 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
         )
         text_response = response.text
         return json.loads(text_response)
-    except Exception as e:
+    except (json.JSONDecodeError, Exception) as e:
         st.error(f"Error generando preguntas: {e}")
         return []
 
@@ -185,16 +221,29 @@ def evaluate_quiz(questions, user_answers):
         
     return score, results
 
-def get_chat_response(history, user_input, system_instruction, knowledge_context=""):
+def get_chat_response(history: list, user_input: str, system_instruction: str, knowledge_context: str = "", multimedia_index: Optional[list] = None) -> dict:
     """Obtiene respuesta del chat de Gemini."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     if not client:
-        return "Modo demostración: Configura tu API Key para chatear con Gemini real."
+        return {"text": "Modo demostración: Configura tu API Key para chatear con Gemini real.", "recommendations": []}
     
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
     
-    full_prompt = f"Instrucción del sistema: {system_instruction}\n\nInformación de Contexto (Base de Conocimiento):\n{knowledge_context}\n\nUsuario: {user_input}"
+    # Serializar y inyectar el índice multimedia en el prompt del sistema
+    local_resources_str = json.dumps(multimedia_index, ensure_ascii=False) if multimedia_index else "No hay recursos locales disponibles."
+    system_instruction = system_instruction.replace("{multimedia_index_placeholder}", local_resources_str)
+
+    # Instrucciones para activar la búsqueda externa real
+    external_hint = (
+        "\n\n[MECANISMO DE BÚSQUEDA EXTERNA]\n"
+        "Si el tema EXACTO no está en la biblioteca local, es OBLIGATORIO que uses la búsqueda externa.\n"
+        "1. NO generes enlaces Markdown como `Título`. NO sugieras al usuario que busque por su cuenta.\n"
+        "2. DEBES usar el formato de bloque `[RESOURCES]` con un JSON dentro.\n"
+        "3. El sistema se encargará de la búsqueda real. Tú solo debes generar la instrucción JSON.\n"
+        "   FORMATO CORRECTO: `[RESOURCES]\n[{\"title\": \"Video sobre Storytelling\", \"url\": \"SEARCH_EXTERNAL: storytelling para negocios\", \"reason\": \"...\"}]`\n"
+        "   FORMATO INCORRECTO: `Recursos recomendados: Video sobre Storytelling`"
+    )
+
     # Construir historial estructurado para Gemini
     contents = []
     for msg in history:
@@ -206,7 +255,7 @@ def get_chat_response(history, user_input, system_instruction, knowledge_context
             )
         )
     
-    full_system_instruction = f"{system_instruction}\n\nInformación de Contexto (Base de Conocimiento):\n{knowledge_context}"
+    full_system_instruction = f"{system_instruction}{external_hint}\n\nInformación de Contexto (Base de Conocimiento):\n{knowledge_context}"
     
     try:
         response = client.models.generate_content(
@@ -216,13 +265,52 @@ def get_chat_response(history, user_input, system_instruction, knowledge_context
                 system_instruction=full_system_instruction
             )
         )
-        return response.text
-    except Exception as e:
-        return f"⚠️ **Error de conexión con la IA:** {e}.\n\nPor favor, verifica que tu API Key en `.streamlit/secrets.toml` sea correcta y válida."
+        raw_response = response.text
 
+        # Parsear la respuesta para separar texto y recursos
+        text_part = raw_response
+        recommendations = []
+        
+        if "[RESOURCES]" in raw_response:
+            parts = raw_response.split("[RESOURCES]", 1)
+            text_part = parts[0].strip()
+            try:
+                json_str = parts[1].strip()
+
+                # Limpieza de bloques de código Markdown si el modelo los añade
+                if "```" in json_str:
+                    json_str = json_str.replace("```json", "").replace("```", "").strip()
+
+                # Buscar el inicio de la lista JSON y usar raw_decode para ignorar texto extra
+                start_idx = json_str.find('[')
+                if start_idx != -1:
+                    json_data_str = json_str[start_idx:]
+                    decoder = json.JSONDecoder()
+                    initial_recs, _ = decoder.raw_decode(json_data_str)
+                    
+                    # Ahora, procesar y expandir búsquedas externas
+                    for rec in initial_recs:
+                        url = rec.get("url", "")
+                        if isinstance(url, str) and "SEARCH_EXTERNAL:" in url:
+                            query = url.split("SEARCH_EXTERNAL:", 1)[1].strip()
+                            if buscar_youtube_externo:
+                                external_results = buscar_youtube_externo(query)
+                                if isinstance(external_results, list):
+                                    recommendations.extend(external_results)
+                        else:
+                            recommendations.append(rec)
+                else:
+                    pass # No se encontró un array JSON válido
+            except (json.JSONDecodeError, IndexError) as e:
+                print(f"No se pudo parsear los recursos de la respuesta: {e}")
+        
+        return {"text": text_part, "recommendations": recommendations}
+    except Exception as e:
+        return {"text": f"⚠️ **Error de conexión con la IA:** {e}.\n\nPor favor, verifica que tu API Key en `.streamlit/secrets.toml` sea correcta y válida.", "recommendations": []}
+
+@st.cache_data(show_spinner=False, ttl=86400)
 def generate_dynamic_roles(knowledge_context):
     """Genera roles/niveles jerárquicos basados en el contenido."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     # Roles por defecto si falla la IA o no hay contenido
     default_roles = ["Principiante", "Intermedio", "Avanzado", "Experto"]
@@ -260,9 +348,9 @@ def generate_dynamic_roles(knowledge_context):
         print(f"Error generando roles dinámicos: {e}")
         return default_roles
 
+@st.cache_data(show_spinner=False, ttl=86400)
 def generate_dynamic_topics(knowledge_context):
     """Genera temas de examen basados en el contenido."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     default_topics = ["Conocimiento General"]
     
@@ -559,7 +647,6 @@ def graficar_impacto_aprendizaje(df: pd.DataFrame):
 
 def analyze_prompt_patterns(prompts_list):
     """Analiza una lista de prompts para identificar patrones, temáticas e inquietudes."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     if not client or not prompts_list:
         return []
@@ -703,7 +790,6 @@ def graficar_patrones_prompts(data):
 
 def generate_action_plan(patterns, focus="Global", knowledge_context=""):
     """Genera un plan de acción estratégico basado en los patrones de inquietudes."""
-    from config import CLIENT_CONFIG
     client = init_gemini()
     if not client:
         return "⚠️ Error: No se pudo conectar con el motor de IA para generar el plan."

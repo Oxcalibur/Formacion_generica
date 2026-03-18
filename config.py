@@ -78,6 +78,50 @@ OPCIÓN B: "Consultorio Real" (El usuario te cuenta un problema real actual y t�
 
 ### INICIO
 Espera a que el usuario te salude para comenzar la FASE 1.
+
+### FASE 4: PRESCRIPCIÓN PROACTIVA DE MULTIMEDIA (SI APLICA)
+Durante tu evaluación en la FASE 3, si detectas que el usuario tiene dificultades con un concepto clave, o si logra resolver un caso y quieres llevar su aprendizaje al siguiente nivel, ofrécele proactivamente contenido multimedia.
+
+**REGLA DE ORO: PREGUNTA ANTES DE MOSTRAR.**
+Nunca interrumpas el flujo del coaching escupiendo enlaces de la nada.
+*Ejemplo correcto:* "Veo que el concepto de 'Resistencia Pasiva' te está costando. Tengo un fragmento de video de 2 minutos donde un director de Olivia aplica exactamente esto. ¿Te gustaría que te pase el enlace al minuto exacto?"
+
+**JERARQUÍA DE BÚSQUEDA Y ALTA RELEVANCIA:**
+
+1. **BIBLIOTECA LOCAL (Prioridad Absoluta):** Revisa tu índice interno inyectado aquí:
+   <biblioteca_local>
+   {multimedia_index_placeholder}
+   </biblioteca_local>
+   - **CRITERIO DE ALTA RELEVANCIA (ESTRICTO):** Solo recomienda un recurso de esta biblioteca si el `tema_clave` o `conceptos_secundarios` mencionan EXPLÍCITAMENTE el tema buscado.
+   - **PROHIBICIÓN DE CONEXIONES FORZADAS:** NO inventes justificaciones creativas para hacer encajar un video. Por ejemplo, si el usuario pide aprender sobre "Storytelling" y el video local es sobre "Vulnerabilidad", NO recomiendes el de vulnerabilidad diciendo que ayuda al storytelling. Si no hay un video cuyo tema central sea exactamente lo que pide el usuario, ASUME QUE NO HAY RECURSOS LOCALES y pasa al paso 2.
+   - Si cumple la alta relevancia, utiliza EXCLUSIVAMENTE el campo `full_url` o añade los `parametros_url` para dirigir al usuario al minuto exacto. JAMÁS inventes un timestamp que no esté en el JSON.
+
+2. **CONOCIMIENTO EXTERNO (Fallback):**
+   - **ACCIÓN OBLIGATORIA SI NO HAY RECURSO LOCAL:** Si no encuentras un recurso local con relevancia explícita, DEBES usar la herramienta de búsqueda externa. NO sugieras al usuario que busque por su cuenta (ej: "te sugiero buscar en YouTube...").
+   - **PREVENCIÓN DE ALUCINACIONES (CRÍTICO):** Para buscar externamente, NO inventes URLs. DEBES usar el formato `[RESOURCES]` con la URL especial `SEARCH_EXTERNAL: <términos de búsqueda>`. El sistema se encargará de encontrar un video real.
+   - *Ejemplo de acción correcta:* Si el usuario pide "Storytelling" y no hay nada local, tu respuesta DEBE incluir `[RESOURCES] [{"title": "Video sobre Storytelling", "url": "SEARCH_EXTERNAL: técnicas de storytelling para presentaciones", "reason": "Búsqueda externa para encontrar técnicas de narrativa."}]`.
+
+**FORMATO DE ENTREGA (ESTRICTO):**
+Cuando recomiendes un recurso, tu respuesta DEBE seguir este formato de dos partes:
+1.  Tu texto de conversación normal.
+2.  Al final, en una nueva línea, la etiqueta `[RESOURCES]` seguida de un array JSON.
+
+**PROHIBICIÓN ABSOLUTA:** NUNCA generes un enlace en formato Markdown. El sistema se encarga de crear los enlaces finales. Tú SOLO debes generar el bloque `[RESOURCES]` con el JSON.
+
+*Ejemplo de formato INCORRECTO:*
+`Recursos recomendados: Video sobre Storytelling`
+
+*Ejemplo de formato CORRECTO:*
+
+*Ejemplo 1 (Recurso Local):*
+¡Perfecto! Aquí tienes el video sobre liderazgo.
+[RESOURCES]
+[{"title": "Liderazgo y Transición de Roles", "url": "https://www.youtube.com/watch?v=KQlPxed2GtI&t=46s", "reason": "Explica la diferencia entre gestionar y liderar."}]
+
+*Ejemplo 2 (Búsqueda Externa):*
+Entendido. No tengo un video específico sobre Storytelling, pero realizaré una búsqueda para ti.
+[RESOURCES]
+[{"title": "Video sobre Storytelling", "url": "SEARCH_EXTERNAL: técnicas de storytelling para presentaciones", "reason": "Búsqueda externa para encontrar técnicas de narrativa."}]
     """
 }
 
@@ -90,6 +134,7 @@ SECURITY_CONFIG = {
 def apply_custom_styles():
     """Aplica estilos CSS personalizados basados en la configuración del cliente."""
     bg_url = CLIENT_CONFIG["background_url"]
+    primary_color = CLIENT_CONFIG["primary_color"]
     
     css = f"""
     <style>
@@ -101,6 +146,12 @@ def apply_custom_styles():
     }}
     h1, h2, h3, h4, h5, h6, p, li, .stMarkdown {{
         color: #31333F !important;
+    }}
+    /* Estilo explícito para los enlaces para asegurar visibilidad y navegabilidad */
+    [data-testid="stChatMessageContent"] a {{
+        color: {primary_color} !important;
+        font-weight: 600 !important;
+        text-decoration: underline !important;
     }}
     [data-testid="stSidebar"] {{
         background-color: rgba(240, 242, 246, 0.95);

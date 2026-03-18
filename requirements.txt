@@ -1,6 +1,7 @@
 streamlit
-pandas
 google-genai
 pypdf
 st-gsheets-connection
+pandas
 plotly
+youtube-transcript-api
