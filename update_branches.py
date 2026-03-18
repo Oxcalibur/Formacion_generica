@@ -5,7 +5,13 @@ import subprocess
 # --- CONFIGURACIÓN ---
 # Carpetas y ficheros que no deben ser modificados por la fusión con main 
 # (se mantiene la versión de la rama destino/local)
-PROTECTED_PATHS = ["knowledge_base", "images", "data/puntuaciones.json"]
+PROTECTED_PATHS = [
+    "knowledge_base", 
+    "images", 
+    "data/puntuaciones.json",
+    "data/multimedia.csv",  # Protege el origen de datos multimedia si está en data
+    "data/video_index.json" # Protege el índice generado si está en data
+]
 SCRIPT_NAME = os.path.basename(__file__)
 
 def run_cmd(cmd, exit_on_error=False):
