@@ -5,3 +5,4 @@ st-gsheets-connection
 pandas
 plotly
 youtube-transcript-api
+google-api-python-client
