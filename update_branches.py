@@ -113,7 +113,7 @@ def main():
     print("Cambiando a 'main' y actualizando...")
     try:
         run_cmd("git checkout main", exit_on_error=True)
-        run_cmd("git pull origin main")
+        run_cmd("git pull origin main --no-rebase")
     except Exception as e:
         print(f"Error actualizando main: {e}")
         sys.exit(1)
@@ -153,7 +153,7 @@ def main():
             
         print(f"   Sincronizando '{branch}' con remoto...")
         pull_proc = subprocess.run(
-            f"git pull origin '{branch}' --no-edit", 
+            f"git pull origin '{branch}' --no-edit --no-rebase", 
             shell=True, 
             stdout=subprocess.PIPE, 
             stderr=subprocess.PIPE, 
