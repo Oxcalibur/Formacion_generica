@@ -89,6 +89,8 @@ Me alegra que quieras profundizar. Aquí tienes dos enfoques complementarios:
   {"title": "El poder de la vulnerabilidad (Interno)", "url": "https://url-del-json-local.com", "reason": "Base cultural necesaria para el feedback."},
   {"title": "Técnicas de Feedback Efectivo (Externo)", "url": "SEARCH_EXTERNAL: framework radical candor feedback efectivo", "reason": "Técnica externa específica solicitada."}
 ]
+"""
+}
 
 # Configuración de Seguridad y Persistencia
 SECURITY_CONFIG = {
@@ -121,6 +123,7 @@ def apply_custom_styles():
     [data-testid="stSidebar"] {{
         background-color: rgba(240, 242, 246, 0.95);
     }}
+    /* Importante: Las llaves CSS deben ser dobles {{ y }} en los f-strings de Python */
     [data-testid="stSidebar"] img {{
         background-color: #31333F;
         padding: 10px;
