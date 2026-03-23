@@ -10,6 +10,7 @@ from logic import (
     calculate_historical_improvement_rate, load_multimedia_resources
 )
 from auth import get_auth_manager
+from componentes_ui import hybrid_chat_input
 
 auth_manager = get_auth_manager()
 
@@ -167,12 +168,13 @@ if mode == "Asistente Formativo":
                     st.markdown(f"- **[{rec.get('title', 'Recurso')}]({rec.get('url', '#')})**: {rec.get('reason', 'Recomendado para profundizar en el tema.')}")
 
     # Input de usuario
-    if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
+    prompt_final = hybrid_chat_input("¿En qué puedo ayudarte hoy?")
+    if prompt_final:
         # Registrar prompt de forma anónima si está habilitado
         if CLIENT_CONFIG.get("log_prompts", False):
             worksheet = CLIENT_CONFIG.get("prompts_worksheet_name")
             if worksheet:
-                log_user_prompt(prompt, worksheet, st.session_state.user_role)
+                log_user_prompt(prompt_final, worksheet, st.session_state.user_role)
 
         # Registrar interacción si es la primera de la sesión
         if st.session_state.get("logged_in") and not st.session_state.session_interaction_recorded:
@@ -181,7 +183,7 @@ if mode == "Asistente Formativo":
             st.session_state.session_interaction_recorded = True
 
         # Guardar y mostrar mensaje usuario
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
+        st.session_state.chat_history.append({"role": "user", "content": prompt_final})
 
         # Generar respuesta
         with st.spinner("Consultando base de conocimiento..."):
@@ -198,7 +200,7 @@ if mode == "Asistente Formativo":
             
             response_data = get_chat_response(
                 clean_history, 
-                prompt, 
+                prompt_final, 
                 full_prompt, 
                 knowledge_context=st.session_state.knowledge_base,
                 multimedia_index=local_resources
