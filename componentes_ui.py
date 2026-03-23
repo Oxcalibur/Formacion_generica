@@ -1,9 +1,11 @@
 import streamlit as st
 
+error_msg = ""
 try:
     from streamlit_mic_recorder import speech_to_text
-except ImportError:
+except Exception as e:
     speech_to_text = None
+    error_msg = str(e)
 
 def hybrid_chat_input(placeholder="¿En qué puedo ayudarte hoy?"):
     """
@@ -28,6 +30,6 @@ def hybrid_chat_input(placeholder="¿En qué puedo ayudarte hoy?"):
                 key='stt_input'
             )
     else:
-        st.error("⚠️ La librería de voz no está instalada. Abre la terminal y ejecuta: pip install streamlit-mic-recorder==0.0.8")
+        st.error(f"⚠️ Error cargando la librería de voz: {error_msg}. Detén la app (Ctrl+C) y vuelve a ejecutar 'streamlit run streamlit_app.py'")
             
     return prompt_teclado or prompt_voz
