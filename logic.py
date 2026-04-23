@@ -164,7 +164,7 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
     Tu objetivo es crear un test de evaluación de 5 preguntas adaptado a los contenidos proporcionados.
     
     BASE DE CONOCIMIENTO (CONTENIDO FUENTE):
-    {knowledge_context if knowledge_context.strip() else "No hay documentos cargados. Usa conocimiento general."}
+    {knowledge_context[:15000] if knowledge_context.strip() else "No hay documentos cargados. Usa conocimiento general."}
     
     CONFIGURACIÓN DEL EXAMEN:
     - Tema sugerido: '{topic}'
@@ -244,9 +244,9 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
         "   FORMATO INCORRECTO: `Recursos recomendados: Video sobre Storytelling`"
     )
 
-    # Construir historial estructurado para Gemini
+    # Construir historial estructurado para Gemini (Limitado a las últimas 6 interacciones para ahorrar tokens)
     contents = []
-    for msg in history:
+    for msg in history[-6:]:
         role = "user" if msg["role"] == "user" else "model"
         contents.append(
             types.Content(
@@ -255,7 +255,7 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
             )
         )
     
-    full_system_instruction = f"{system_instruction}{external_hint}\n\nInformación de Contexto (Base de Conocimiento):\n{knowledge_context}"
+    full_system_instruction = f"{system_instruction}{external_hint}\n\nInformación de Contexto (Base de Conocimiento):\n{knowledge_context[:20000]}"
     
     try:
         response = client.models.generate_content(
@@ -326,7 +326,7 @@ def generate_dynamic_roles(knowledge_context):
     Deben ir de menor a mayor experiencia.
     
     CONTENIDO (Muestra):
-    {knowledge_context[:50000]} 
+    {knowledge_context[:12000]} 
     
     Responde ÚNICAMENTE con un JSON válido que sea una lista de 4 strings.
     Ejemplo: ["Aprendiz de Cocina", "Cocinero de Línea", "Sous Chef", "Chef Ejecutivo"]
@@ -364,7 +364,7 @@ def generate_dynamic_topics(knowledge_context):
     Los temas deben ser breves, descriptivos y cubrir diferentes aspectos del contenido.
     
     CONTENIDO (Muestra):
-    {knowledge_context[:50000]} 
+    {knowledge_context[:12000]} 
     
     Responde ÚNICAMENTE con un JSON válido que sea una lista de strings.
     Ejemplo: ["Historia", "Conceptos Básicos", "Metodología", "Casos de Uso"]
@@ -654,7 +654,7 @@ def analyze_prompt_patterns(prompts_list):
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
     
     # Tomamos una muestra representativa si son muchos para no saturar el contexto
-    sample_prompts = prompts_list[:150] if len(prompts_list) > 150 else prompts_list
+    sample_prompts = prompts_list[:50] if len(prompts_list) > 50 else prompts_list
     text_data = "\n".join([f"- {p}" for p in sample_prompts]) 
 
     prompt = f"""
@@ -797,14 +797,14 @@ def generate_action_plan(patterns, focus="Global", knowledge_context=""):
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
     
     # Serializar patrones (limitado para no saturar contexto si hay muchos)
-    patterns_summary = json.dumps(patterns[:60], indent=2, ensure_ascii=False)
+    patterns_summary = json.dumps(patterns[:30], indent=2, ensure_ascii=False)
     
     prompt = f"""
     Actúa como un Consultor Estratégico de Formación y Desarrollo (L&D).
     Analiza los siguientes patrones de consultas de usuarios (inquietudes detectadas en la plataforma):
     
     CONTEXTO DE LA BASE DE CONOCIMIENTO (Referencia):
-    {knowledge_context[:30000] if knowledge_context else "No disponible."}
+    {knowledge_context[:10000] if knowledge_context else "No disponible."}
     
     DATOS DE TENDENCIAS:
     {patterns_summary}
