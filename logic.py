@@ -19,6 +19,8 @@ except ImportError:
 import streamlit as st
 import json
 import os
+import random
+import time
 try:
     import plotly.graph_objects as go
 except ImportError:
@@ -26,7 +28,6 @@ except ImportError:
 from typing import List, Dict, Any, Optional
 import datetime
 from config import CLIENT_CONFIG
-from tenacity import retry, wait_exponential, stop_after_attempt
 
 # Definición de Cinturones (Gamificación)
 BELTS = [
@@ -158,7 +159,7 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
             {"question": "Pregunta de prueba 5", "options": ["A", "B", "C"], "answer": "B"},
         ]
 
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
+    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
 
     prompt = f"""
     Actúa como un generador de exámenes experto y dinámico.
@@ -187,12 +188,10 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
     """
     
     try:
-        response = client.models.generate_content(
-            model=model_name,
+        response = llamar_gemini_con_rotacion_y_reintento(
+            model_name=model_name,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
+            config=types.GenerateContentConfig(response_mime_type="application/json")
         )
         text_response = response.text
         return json.loads(text_response)
@@ -222,16 +221,52 @@ def evaluate_quiz(questions, user_answers):
         
     return score, results
 
-# Esta es la función aislada que sí va a reintentar de verdad
-@retry(wait=wait_exponential(multiplier=1.5, min=2, max=10), stop=stop_after_attempt(4))
-def llamar_gemini_chat_con_reintento(client, model_name, contents, full_system_instruction):
-    return client.models.generate_content(
-        model=model_name,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=full_system_instruction
-        )
-    )
+def llamar_gemini_con_rotacion_y_reintento(model_name, contents, config=None, max_retries=3):
+    """Intenta enviar la petición rotando entre múltiples API Keys si recibe un Error 429."""
+    api_keys = []
+    try:
+        for key in st.secrets:
+            if key.startswith("GOOGLE_API_KEY"):
+                api_keys.append(st.secrets[key])
+    except Exception:
+        pass
+        
+    if not api_keys:
+        single_key = os.environ.get("GOOGLE_API_KEY")
+        if single_key:
+            api_keys.append(single_key)
+            
+    if not api_keys:
+        raise ValueError("No se encontraron API Keys configuradas.")
+
+    last_error = None
+    for attempt in range(max_retries):
+        random.shuffle(api_keys)
+        for key in api_keys:
+            try:
+                print(f"🔄 GEMINI API: Intentando con API Key terminada en ...{key[-4:]}")
+                client_temp = genai.Client(api_key=key)
+                return client_temp.models.generate_content(
+                    model=model_name,
+                    contents=contents,
+                    config=config
+                )
+            except Exception as e:
+                error_str = str(e).upper()
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "QUOTA" in error_str:
+                    print(f"⚠️ Cuota agotada para la key ...{key[-4:]}. Saltando a otra...")
+                    last_error = e
+                    continue
+                else:
+                    raise e
+        
+        if attempt < max_retries - 1:
+            sleep_time = 3 * (attempt + 1)
+            print(f"⏳ Todas las llaves agotadas. Esperando {sleep_time}s antes de reintentar...")
+            time.sleep(sleep_time)
+            
+    raise last_error or Exception("Cuota agotada en TODAS las API Keys.")
+
 
 def get_chat_response(history: list, user_input: str, system_instruction: str, knowledge_context: str = "", multimedia_index: Optional[list] = None) -> dict:
     """Obtiene respuesta del chat de Gemini."""
@@ -239,7 +274,7 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
     if not client:
         return {"text": "Modo demostración: Configura tu API Key para chatear con Gemini real.", "recommendations": []}
     
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
+    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
     
     # Serializar y inyectar el índice multimedia en el prompt del sistema
     local_resources_str = json.dumps(multimedia_index, ensure_ascii=False) if multimedia_index else "No hay recursos locales disponibles."
@@ -272,16 +307,14 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
             )
             expected_role = "model" if role == "user" else "user"
     
-    contexto_seguro = knowledge_context[:25000] if knowledge_context else "No hay documentos cargados."
+    contexto_seguro = knowledge_context[:15000] if knowledge_context else "No hay documentos cargados."
     full_system_instruction = f"{system_instruction}{external_hint}\n\nInformación de Contexto (Base de Conocimiento):\n{contexto_seguro}"
     
     try:
-        # Usamos la función escudo que reintenta
-        response = llamar_gemini_chat_con_reintento(
-            client=client,
+        response = llamar_gemini_con_rotacion_y_reintento(
             model_name=model_name,
             contents=contents,
-            full_system_instruction=full_system_instruction
+            config=types.GenerateContentConfig(system_instruction=full_system_instruction)
         )
         raw_response = response.text
 
@@ -324,7 +357,7 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
         
         return {"text": text_part, "recommendations": recommendations}
     except Exception as e:
-        return {"text": f"⚠️ **Error de conexión con la IA:** {e}.\n\nPor favor, verifica que tu API Key en `.streamlit/secrets.toml` sea correcta y válida.", "recommendations": []}
+        return {"text": f"⚠️ **Error inesperado:** `{e}`", "recommendations": []}
 
 @st.cache_data(show_spinner=False, ttl=86400)
 def generate_dynamic_roles(knowledge_context):
@@ -336,7 +369,7 @@ def generate_dynamic_roles(knowledge_context):
     if not client or not knowledge_context.strip():
         return default_roles
 
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
+    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
     
     prompt = f"""
     Analiza el siguiente contenido educativo y define 4 niveles o roles jerárquicos adecuados para un estudiante de este material.
@@ -351,12 +384,10 @@ def generate_dynamic_roles(knowledge_context):
     """
     
     try:
-        response = client.models.generate_content(
-            model=model_name,
+        response = llamar_gemini_con_rotacion_y_reintento(
+            model_name=model_name,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
+            config=types.GenerateContentConfig(response_mime_type="application/json")
         )
         roles = json.loads(response.text)
         if isinstance(roles, list) and len(roles) > 0:
@@ -375,7 +406,7 @@ def generate_dynamic_topics(knowledge_context):
     if not client or not knowledge_context.strip():
         return default_topics
 
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
+    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
     
     prompt = f"""
     Analiza el siguiente contenido educativo y extrae una lista de 5 a 8 temas principales sobre los que se podría evaluar al usuario.
@@ -389,12 +420,10 @@ def generate_dynamic_topics(knowledge_context):
     """
     
     try:
-        response = client.models.generate_content(
-            model=model_name,
+        response = llamar_gemini_con_rotacion_y_reintento(
+            model_name=model_name,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
+            config=types.GenerateContentConfig(response_mime_type="application/json")
         )
         topics = json.loads(response.text)
         if isinstance(topics, list) and len(topics) > 0:
@@ -669,7 +698,7 @@ def analyze_prompt_patterns(prompts_list):
     if not client or not prompts_list:
         return []
 
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
+    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
     
     # Tomamos una muestra representativa si son muchos para no saturar el contexto
     sample_prompts = prompts_list[:50] if len(prompts_list) > 50 else prompts_list
@@ -704,12 +733,10 @@ def analyze_prompt_patterns(prompts_list):
     """
 
     try:
-        response = client.models.generate_content(
-            model=model_name,
+        response = llamar_gemini_con_rotacion_y_reintento(
+            model_name=model_name,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
+            config=types.GenerateContentConfig(response_mime_type="application/json")
         )
         return json.loads(response.text)
     except Exception as e:
@@ -812,7 +839,7 @@ def generate_action_plan(patterns, focus="Global", knowledge_context=""):
     if not client:
         return "⚠️ Error: No se pudo conectar con el motor de IA para generar el plan."
 
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.0-flash")
+    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
     
     # Serializar patrones (limitado para no saturar contexto si hay muchos)
     patterns_summary = json.dumps(patterns[:30], indent=2, ensure_ascii=False)
@@ -841,7 +868,10 @@ def generate_action_plan(patterns, focus="Global", knowledge_context=""):
     """
     
     try:
-        response = client.models.generate_content(model=model_name, contents=prompt)
+        response = llamar_gemini_con_rotacion_y_reintento(
+            model_name=model_name,
+            contents=prompt
+        )
         return response.text
     except Exception as e:
         return f"Error generando el plan de acción: {e}"
