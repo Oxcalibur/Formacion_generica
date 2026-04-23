@@ -26,6 +26,7 @@ except ImportError:
 from typing import List, Dict, Any, Optional
 import datetime
 from config import CLIENT_CONFIG
+from tenacity import retry, wait_exponential, stop_after_attempt
 
 # Definición de Cinturones (Gamificación)
 BELTS = [
@@ -221,6 +222,17 @@ def evaluate_quiz(questions, user_answers):
         
     return score, results
 
+# Esta es la función aislada que sí va a reintentar de verdad
+@retry(wait=wait_exponential(multiplier=1.5, min=2, max=10), stop=stop_after_attempt(4))
+def llamar_gemini_chat_con_reintento(client, model_name, contents, full_system_instruction):
+    return client.models.generate_content(
+        model=model_name,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            system_instruction=full_system_instruction
+        )
+    )
+
 def get_chat_response(history: list, user_input: str, system_instruction: str, knowledge_context: str = "", multimedia_index: Optional[list] = None) -> dict:
     """Obtiene respuesta del chat de Gemini."""
     client = init_gemini()
@@ -255,15 +267,16 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
             )
         )
     
-    full_system_instruction = f"{system_instruction}{external_hint}\n\nInformación de Contexto (Base de Conocimiento):\n{knowledge_context[:20000]}"
+    contexto_seguro = knowledge_context[:25000] if knowledge_context else "No hay documentos cargados."
+    full_system_instruction = f"{system_instruction}{external_hint}\n\nInformación de Contexto (Base de Conocimiento):\n{contexto_seguro}"
     
     try:
-        response = client.models.generate_content(
-            model=model_name,
+        # Usamos la función escudo que reintenta
+        response = llamar_gemini_chat_con_reintento(
+            client=client,
+            model_name=model_name,
             contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=full_system_instruction
-            )
+            full_system_instruction=full_system_instruction
         )
         raw_response = response.text
 
