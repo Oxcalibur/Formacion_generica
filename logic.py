@@ -258,14 +258,19 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
 
     # Construir historial estructurado para Gemini (Limitado a las últimas 6 interacciones para ahorrar tokens)
     contents = []
+    expected_role = "user"
     for msg in history[-6:]:
         role = "user" if msg["role"] == "user" else "model"
-        contents.append(
-            types.Content(
-                role=role,
-                parts=[types.Part.from_text(text=msg["content"])]
+        
+        # Regla estricta de Gemini: Debe empezar por 'user' y alternar
+        if role == expected_role:
+            contents.append(
+                types.Content(
+                    role=role,
+                    parts=[types.Part.from_text(text=msg["content"])]
+                )
             )
-        )
+            expected_role = "model" if role == "user" else "user"
     
     contexto_seguro = knowledge_context[:25000] if knowledge_context else "No hay documentos cargados."
     full_system_instruction = f"{system_instruction}{external_hint}\n\nInformación de Contexto (Base de Conocimiento):\n{contexto_seguro}"
