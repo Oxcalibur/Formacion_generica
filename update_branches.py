@@ -37,8 +37,8 @@ def get_branches():
     """Obtiene la lista de ramas locales."""
     try:
         raw = run_cmd("git branch --format='%(refname:short)'")
-        # Filtramos líneas vacías por seguridad
-        return [b.strip() for b in raw.split('\n') if b.strip()]
+        # Filtramos líneas vacías y quitamos posibles comillas por seguridad
+        return [b.strip().strip("'\"") for b in raw.split('\n') if b.strip()]
     except Exception:
         return []
 
@@ -144,7 +144,7 @@ def main():
     for branch in ramas_a_procesar:
         print(f"\n🔹 Procesando rama: {branch}")
         try: 
-            run_cmd(f"git checkout '{branch}'")
+            run_cmd(f"git checkout {branch}")
         except Exception as e:
             print(f"   ❌ No se pudo cambiar a la rama '{branch}'")
             if hasattr(e, 'stderr'):
@@ -153,7 +153,7 @@ def main():
             
         print(f"   Sincronizando '{branch}' con remoto...")
         pull_proc = subprocess.run(
-            f"git pull origin '{branch}' --no-edit --no-rebase", 
+            f"git pull origin {branch} --no-edit --no-rebase", 
             shell=True, 
             stdout=subprocess.PIPE, 
             stderr=subprocess.PIPE, 
@@ -226,7 +226,7 @@ def main():
                  subprocess.run("git merge --abort", shell=True)
                  
             print(f"   🚀 Asegurando actualización en GitHub...")
-            push_proc = subprocess.run(f"git push origin '{branch}'", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            push_proc = subprocess.run(f"git push origin {branch}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
             if push_proc.returncode == 0:
                 print(f"   ☁️  Rama '{branch}' comprobada y online.")
             else:
