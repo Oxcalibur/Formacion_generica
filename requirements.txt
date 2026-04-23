@@ -7,3 +7,4 @@ plotly
 youtube-transcript-api
 google-api-python-client
 streamlit-mic-recorder==0.0.8
+tenacity
