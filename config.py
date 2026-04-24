@@ -17,7 +17,7 @@ CLIENT_CONFIG = {
     "logo_path": os.path.join(BASE_DIR, "images", "logo.png"), # Logo desde carpeta local
     "background_url": get_conf("background_url", "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2072&auto=format&fit=crop"),
     "primary_color": get_conf("primary_color", "#00a8e8"),
-    "ai_model": get_conf("ai_model", "gemini-2.0-flash"), # Modelo configurable (ej. gemini-2.0-flash, gemini-1.5-flash)
+    "ai_model": get_conf("ai_model", "gemini-2.5-flash"), # Modelo configurable (ej. gemini-2.5-flash, gemini-1.5-flash)
     "knowledge_base_folder": os.path.join(BASE_DIR, "knowledge_base"), # Carpeta con documentos fuente (txt, md, etc.)
     "roi_defaults": {
         "time_saved_hours": 1,
