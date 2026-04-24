@@ -11,11 +11,11 @@ try:
     from streamlit_gsheets import GSheetsConnection
 except ImportError:
     GSheetsConnection = None
-import pandas as pd
 try:
     from herramientas_busqueda import buscar_youtube_externo
 except ImportError:
     buscar_youtube_externo = None
+import pandas as pd
 import streamlit as st
 import json
 import os
@@ -344,10 +344,21 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
                         url = rec.get("url", "")
                         if isinstance(url, str) and "SEARCH_EXTERNAL:" in url:
                             query = url.split("SEARCH_EXTERNAL:", 1)[1].strip()
+                            external_results = None
+                            
                             if buscar_youtube_externo:
                                 external_results = buscar_youtube_externo(query)
-                                if isinstance(external_results, list):
-                                    recommendations.extend(external_results)
+                                
+                            if isinstance(external_results, list) and len(external_results) > 0:
+                                recommendations.extend(external_results)
+                            else:
+                                # Fallback: Enlace a la búsqueda si la API de YouTube falla o no está configurada
+                                formatted_query = query.replace(" ", "+")
+                                youtube_search_url = f"https://www.youtube.com/results?search_query={formatted_query}"
+                                rec["url"] = youtube_search_url
+                                if isinstance(external_results, str) and "ERROR" in external_results:
+                                    rec["reason"] += f" (Nota técnica: {external_results})"
+                                recommendations.append(rec)
                         else:
                             recommendations.append(rec)
                 else:
