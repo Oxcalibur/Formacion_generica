@@ -85,10 +85,7 @@ Me alegra que quieras profundizar. Aquí tienes dos enfoques complementarios:
 - 🌐 **Para profundizar en la técnica (Externo):** Además, voy a buscarte un recurso práctico con metodologías específicas paso a paso sobre cómo estructurar la conversación de feedback.
 
 [RESOURCES]
-[
-  {"title": "El poder de la vulnerabilidad (Interno)", "url": "https://url-del-json-local.com", "reason": "Base cultural necesaria para el feedback."},
-  {"title": "Técnicas de Feedback Efectivo (Externo)", "url": "SEARCH_EXTERNAL: framework radical candor feedback efectivo", "reason": "Técnica externa específica solicitada."}
-]
+[]
 """
 }
 
