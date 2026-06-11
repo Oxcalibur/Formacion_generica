@@ -183,8 +183,9 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
     
     Ejemplo de estructura JSON requerida:
     [
-        {{"question": "¿Qué es X?", "options": ["A", "B", "C"], "answer": "A"}}
+        {{"question": "¿Qué es X?", "options": ["Opción 1", "Opción 2", "Opción 3"], "answer": "Opción 1"}}
     ]
+    IMPORTANTE: El valor en "answer" DEBE ser una copia exacta del string de la opción correcta dentro de "options". No devuelvas solo la letra.
     """
     
     try:
@@ -205,9 +206,18 @@ def evaluate_quiz(questions, user_answers):
     results = []
     
     for i, q in enumerate(questions):
-        correct = q["answer"]
-        user_ans = user_answers.get(i)
-        is_correct = user_ans == correct
+        correct = str(q.get("answer", "")).strip()
+        user_ans = str(user_answers.get(i, "")).strip()
+        
+        # Comparación exacta
+        is_correct = (user_ans == correct)
+        
+        # Comparación tolerante (por si la IA devuelve "A" y la opción es "A) texto")
+        if not is_correct and correct and user_ans:
+            if user_ans.startswith(correct + ")") or user_ans.startswith(correct + " ") or user_ans.startswith(correct + "."):
+                is_correct = True
+            elif correct.startswith(user_ans + ")") or correct.startswith(user_ans + " ") or correct.startswith(user_ans + "."):
+                is_correct = True
         
         if is_correct:
             score += 10 # 10 puntos por respuesta correcta
