@@ -34,16 +34,20 @@ class AuthManager:
                     "score": 0,
                     "active_sessions": 0,
                     "role": "admin" if user == "admin" else "user",
-                    "job_role": "Administrador" if user == "admin" else "Estudiante"
+                    "job_role": "Administrador" if user == "admin" else "Estudiante",
+                    "language": "es" # Idioma por defecto
                 }
                 updated = True
             else:
                 if "job_role" not in data[user]:
                     data[user]["job_role"] = "Administrador" if user == "admin" else "Estudiante"
                     updated = True
+                if "language" not in data[user]:
+                    data[user]["language"] = "es" # Añadir idioma a usuarios existentes
+                    updated = True
                 if data[user].get("password_hash") != pwd_hash:
                     # Actualizar contraseña si ha cambiado en código
-                    data[user]["password_hash"] = pwd_hash
+                    # data[user]["password_hash"] = pwd_hash # Comentado para no sobreescribir contraseñas de usuarios existentes
                     updated = True
                 
         if updated:
@@ -127,7 +131,8 @@ class AuthManager:
             "score": 0,
             "active_sessions": 0,
             "role": role,
-            "job_role": job_role
+            "job_role": job_role,
+            "language": "es"
         }
         self._save_db(data)
         return True, "Usuario creado correctamente."
@@ -154,7 +159,8 @@ class AuthManager:
         return {
             "score": user.get("score", 0),
             "active_sessions": user.get("active_sessions", 0),
-            "job_role": user.get("job_role", "Estudiante")
+            "job_role": user.get("job_role", "Estudiante"),
+            "language": user.get("language", "es")
         }
 
     def update_user_job_role(self, username, job_role):
@@ -162,6 +168,15 @@ class AuthManager:
         data = self._load_db()
         if username in data:
             data[username]["job_role"] = job_role
+            self._save_db(data)
+            return True
+        return False
+
+    def update_user_language(self, username, language):
+        """Actualiza el idioma preferido del usuario."""
+        data = self._load_db()
+        if username in data:
+            data[username]["language"] = language
             self._save_db(data)
             return True
         return False

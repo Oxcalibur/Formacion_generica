@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+from localization import get_text, TRANSLATIONS
 from config import CLIENT_CONFIG, SECURITY_CONFIG, apply_custom_styles
 from logic import (
     get_current_belt, get_next_belt_data, generate_quiz_questions, evaluate_quiz, 
@@ -15,7 +16,7 @@ from componentes_ui import hybrid_chat_input
 auth_manager = get_auth_manager()
 
 # --- Configuración de Página ---
-st.set_page_config(page_title=CLIENT_CONFIG["client_name"], page_icon="🎓")
+st.set_page_config(page_title=get_text("app_title"), page_icon="🎓")
 apply_custom_styles()
 
 # --- Inicialización de Estado ---
@@ -25,6 +26,8 @@ if "score" not in st.session_state:
     st.session_state.score = 0
 if "active_sessions" not in st.session_state:
     st.session_state.active_sessions = 0
+if "language" not in st.session_state:
+    st.session_state.language = "es"
 if "session_interaction_recorded" not in st.session_state:
     st.session_state.session_interaction_recorded = False
 if "chat_history" not in st.session_state:
@@ -49,11 +52,11 @@ if SECURITY_CONFIG.get("enable_auth", False):
         st.session_state.logged_in = False
         
     if not st.session_state.logged_in:
-        st.title("🔐 Acceso a Formación")
+        st.title(get_text("login_title"))
         with st.form("login_form"):
-            u = st.text_input("Usuario")
-            p = st.text_input("Contraseña", type="password")
-            if st.form_submit_button("Entrar"):
+            u = st.text_input(get_text("login_user"))
+            p = st.text_input(get_text("login_password"), type="password")
+            if st.form_submit_button(get_text("login_button")):
                 if auth_manager.authenticate(u, p):
                     st.session_state.logged_in = True
                     st.session_state.username = u
@@ -61,6 +64,7 @@ if SECURITY_CONFIG.get("enable_auth", False):
                     st.session_state.score = user_data["score"]
                     st.session_state.active_sessions = user_data["active_sessions"]
                     st.session_state.user_role = user_data["job_role"]
+                    st.session_state.language = user_data["language"]
                     st.rerun()
                 else:
                     st.error("Credenciales incorrectas")
@@ -75,32 +79,45 @@ with st.sidebar:
     st.title(CLIENT_CONFIG["client_name"])
     
     if st.session_state.get("logged_in"):
-        st.caption(f"Usuario: {st.session_state.username}")
+        st.caption(f"{get_text('login_user')}: {st.session_state.username}")
         
-        with st.expander("👤 Mi Puesto / Rol"):
+        # Selector de idioma
+        selected_lang_index = list(TRANSLATIONS.keys()).index(st.session_state.language)
+        new_lang = st.selectbox(
+            get_text("language_selector_label"), 
+            options=list(TRANSLATIONS.keys()), 
+            format_func=lambda lang: {"es": "Español", "en": "English"}.get(lang, lang),
+            index=selected_lang_index
+        )
+        if new_lang != st.session_state.language:
+            st.session_state.language = new_lang
+            auth_manager.update_user_language(st.session_state.username, new_lang)
+            st.rerun()
+
+        with st.expander(get_text("sidebar_role_expander")):
             current_role = st.session_state.get("user_role", "Estudiante")
-            new_role = st.text_input("Cargo en la empresa", value=current_role)
-            if st.button("Guardar Cargo"):
+            new_role = st.text_input(get_text("sidebar_role_input"), value=current_role)
+            if st.button(get_text("sidebar_role_button")):
                 if auth_manager.update_user_job_role(st.session_state.username, new_role):
                     st.session_state.user_role = new_role
                     st.rerun()
 
-        with st.expander("🔐 Cambiar Contraseña"):
+        with st.expander(get_text("sidebar_password_expander")):
             with st.form("change_pass_form_sidebar"):
-                new_pass = st.text_input("Nueva contraseña", type="password")
-                confirm_pass = st.text_input("Confirmar", type="password")
-                if st.form_submit_button("Actualizar"):
+                new_pass = st.text_input(get_text("sidebar_password_new"), type="password")
+                confirm_pass = st.text_input(get_text("sidebar_password_confirm"), type="password")
+                if st.form_submit_button(get_text("sidebar_password_update_button")):
                     if new_pass and new_pass == confirm_pass:
                         success, msg = auth_manager.change_password(st.session_state.username, new_pass)
                         if success: st.success(msg)
                         else: st.error(msg)
                     else:
-                        st.error("Las contraseñas no coinciden.")
+                        st.error(get_text("sidebar_password_mismatch"))
 
-        if st.button("Cerrar Sesión"):
+        if st.button(get_text("sidebar_logout_button")):
             # Limpiar variables de sesión para asegurar que el próximo usuario cargue datos limpios
             keys_to_reset = ["logged_in", "username", "score", "active_sessions", "chat_history", 
-                             "quiz_active", "current_questions", "session_interaction_recorded", "user_role"]
+                             "quiz_active", "current_questions", "session_interaction_recorded", "user_role", "language"]
             for key in keys_to_reset:
                 if key in st.session_state:
                     del st.session_state[key]
@@ -108,9 +125,9 @@ with st.sidebar:
             
     # Indicador de estado de la Base de Conocimiento
     if st.session_state.get("knowledge_base"):
-        st.success(f"📚 Base de conocimiento conectada")
+        st.success(get_text("sidebar_kb_connected"))
     else:
-        st.warning("⚠️ Base de conocimiento vacía")
+        st.warning(get_text("sidebar_kb_empty"))
     
     st.divider()
     
@@ -118,30 +135,30 @@ with st.sidebar:
     belt = get_current_belt(st.session_state.score)
     progress_data = get_next_belt_data(st.session_state.score)
     
-    st.markdown(f"### 🥋 Nivel Actual")
+    st.markdown(f"### {get_text('sidebar_level_title')}")
     st.markdown(f"**{belt['name']}**")
     st.progress(min(1.0, st.session_state.score / (belt['threshold'] + 200))) # Barra de progreso visual
-    st.caption(f"Puntos: {st.session_state.score} | Sesiones: {st.session_state.active_sessions}")
+    st.caption(f"{get_text('sidebar_points')}: {st.session_state.score} | {get_text('sidebar_sessions')}: {st.session_state.active_sessions}")
     st.progress(min(1.0, max(0.0, progress_data["progress"]))) # Barra de progreso visual
     
     if progress_data["progress"] < 1.0:
-        st.caption(f"Próximo: {progress_data['next_name']} ({st.session_state.score}/{progress_data['threshold']} pts)")
+        st.caption(f"{get_text('sidebar_next_level')}: {progress_data['next_name']} ({st.session_state.score}/{progress_data['threshold']} pts)")
     else:
-        st.caption(f"¡Máximo nivel alcanzado! ({st.session_state.score} pts)")
+        st.caption(f"{get_text('sidebar_max_level')} ({st.session_state.score} pts)")
     
     st.divider()
     
-    nav_options = ["Asistente Formativo", "Dojo (Ponerse a prueba)"]
+    nav_options = [get_text("nav_assistant"), get_text("nav_dojo")]
     if st.session_state.get("username") == "admin":
-        nav_options.append("ROI Dashboard (Admin)")
-        nav_options.append("Gestión de Usuarios (Admin)")
-        nav_options.append("Registro de Prompts (Admin)")
-    mode = st.radio("Navegación", nav_options)
+        nav_options.append(get_text("nav_roi"))
+        nav_options.append(get_text("nav_users"))
+        nav_options.append(get_text("nav_prompts"))
+    mode = st.radio(get_text("sidebar_title"), nav_options)
 
 # --- Pantalla 1: Asistente Formativo (Chat) ---
-if mode == "Asistente Formativo":
-    st.header(f"Bienvenido, {st.session_state.user_role}")
-    st.caption("Pregunta cualquier duda sobre tus materiales de formación.")
+if mode == get_text("nav_assistant"):
+    st.header(get_text("assistant_welcome").format(user_role=st.session_state.user_role))
+    st.caption(get_text("assistant_caption"))
 
     # Cargar recursos locales para poder recomendarlos
     kb_path = CLIENT_CONFIG.get("knowledge_base_folder", "knowledge_base")
@@ -154,7 +171,10 @@ if mode == "Asistente Formativo":
     # Inicializar conversación si está vacía
     if not st.session_state.chat_history:
         current_role = st.session_state.get("user_role", "Estudiante")
-        welcome_msg = f"Hola, soy {CLIENT_CONFIG['client_name']}. Entiendo que tu rol es **{current_role}**. ¿Cuál es tu reto para hoy?"
+        welcome_msg = get_text("assistant_welcome_msg").format(
+            client_name=CLIENT_CONFIG['client_name'],
+            user_role=current_role
+        )
         st.session_state.chat_history.append({"role": "assistant", "content": welcome_msg})
 
     # Mostrar historial
@@ -168,7 +188,7 @@ if mode == "Asistente Formativo":
                     st.markdown(f"- **[{rec.get('title', 'Recurso')}]({rec.get('url', '#')})**: {rec.get('reason', 'Recomendado para profundizar en el tema.')}")
 
     # Input de usuario
-    prompt_final = hybrid_chat_input("¿En qué puedo ayudarte hoy?")
+    prompt_final = hybrid_chat_input(get_text("assistant_input_placeholder"))
     if prompt_final:
         # Registrar prompt de forma anónima si está habilitado
         if CLIENT_CONFIG.get("log_prompts", False):
@@ -186,11 +206,14 @@ if mode == "Asistente Formativo":
         st.session_state.chat_history.append({"role": "user", "content": prompt_final})
 
         # Generar respuesta
-        with st.spinner("Consultando base de conocimiento..."):
+        with st.spinner(get_text("assistant_thinking")):
             # Prepara un historial limpio para la IA (sin recomendaciones previas para no contaminar contexto)
             clean_history = [{"role": m.get("role"), "content": m.get("content")} for m in st.session_state.chat_history]
             
-            base_prompt = CLIENT_CONFIG["system_prompt"].replace("{client_name}", CLIENT_CONFIG["client_name"])
+            base_prompt = CLIENT_CONFIG["system_prompt"].format(
+                client_name=CLIENT_CONFIG["client_name"], 
+                language=st.session_state.language
+            )
             current_role = st.session_state.get("user_role", "Estudiante")
             role_context = (
                 f"\n\nCONTEXTO DEL USUARIO:\nCargo/Rol actual: {current_role}\n"
@@ -213,27 +236,27 @@ if mode == "Asistente Formativo":
         st.session_state.chat_history.append({"role": "assistant", "content": text_response, "recommendations": recommendations})
         st.rerun()
 # --- Pantalla 2: Dojo (Quiz) ---
-elif mode == "Dojo (Ponerse a prueba)":
-    st.header("🥋 El Dojo")
-    st.markdown(f"Demuestra tu conocimiento para subir de cinturón.  \n**Perfil de evaluación:** {st.session_state.user_role}")
+elif mode == get_text("nav_dojo"):
+    st.header(get_text("dojo_header"))
+    st.markdown(get_text("dojo_caption").format(user_role=st.session_state.user_role))
 
     if not st.session_state.quiz_active:
         # Generar temas dinámicos si no existen
         if not st.session_state.dynamic_topics:
             if st.session_state.knowledge_base:
-                with st.spinner("Identificando temas clave para el examen..."):
+                with st.spinner(get_text("dojo_spinner_topics")):
                     st.session_state.dynamic_topics = generate_dynamic_topics(st.session_state.knowledge_base)
             else:
-                st.session_state.dynamic_topics = ["Conocimiento General"]
+                st.session_state.dynamic_topics = [get_text("dojo_general_knowledge")]
 
         col1, col2 = st.columns(2)
         with col1:
-            topic = st.selectbox("Tema del examen", st.session_state.dynamic_topics)
+            topic = st.selectbox(get_text("dojo_topic_label"), st.session_state.dynamic_topics)
         with col2:
-            difficulty = st.select_slider("Dificultad", options=["Fácil", "Medio", "Difícil"])
+            difficulty = st.select_slider(get_text("dojo_difficulty_label"), options=get_text("dojo_difficulty_levels"))
             
-        if st.button("Comenzar Desafío"):
-            with st.spinner("El Sensei (IA) está preparando tus preguntas..."):
+        if st.button(get_text("dojo_start_button")):
+            with st.spinner(get_text("dojo_spinner_preparing")):
                 questions = generate_quiz_questions(topic, difficulty, st.session_state.user_role, st.session_state.knowledge_base)
                 if questions:
                     st.session_state.current_questions = questions
@@ -245,22 +268,22 @@ elif mode == "Dojo (Ponerse a prueba)":
         with st.form("quiz_form"):
             user_answers = {}
             for i, q in enumerate(st.session_state.current_questions):
-                st.subheader(f"Pregunta {i+1}")
+                st.subheader(get_text("dojo_question_header").format(i=i+1))
                 st.write(q["question"])
                 user_answers[i] = st.radio(
-                    "Selecciona una opción:", 
+                    get_text("dojo_radio_label"), 
                     q["options"], 
                     key=f"q_{i}",
                     index=None
                 )
                 st.divider()
             
-            submitted = st.form_submit_button("Entregar Examen")
+            submitted = st.form_submit_button(get_text("dojo_submit_button"))
             
         if submitted:
             # Validar que todo esté respondido
             if any(a is None for a in user_answers.values()):
-                st.warning("Por favor responde todas las preguntas antes de entregar.")
+                st.warning(get_text("dojo_warning_all_questions"))
             else:
                 points, results = evaluate_quiz(st.session_state.current_questions, user_answers)
                 st.session_state.score += points
@@ -275,20 +298,20 @@ elif mode == "Dojo (Ponerse a prueba)":
                 st.session_state.current_questions = [] # Limpiar
                 
                 # Mostrar resultados
-                st.success(f"¡Examen completado! Has ganado {points} puntos.")
-                with st.expander("Ver detalles"):
+                st.success(get_text("dojo_success").format(points=points))
+                with st.expander(get_text("dojo_results_expander")):
                     for res in results:
                         color = "green" if res["is_correct"] else "red"
                         st.markdown(f":{color}[{res['question']}]")
-                        st.write(f"Tu respuesta: {res['user_answer']}")
+                        st.write(f"{get_text('dojo_your_answer')} {res['user_answer']}")
                         if not res["is_correct"]:
-                            st.write(f"Correcta: {res['correct_answer']}")
+                            st.write(f"{get_text('dojo_correct_answer')} {res['correct_answer']}")
                 
-                if st.button("Volver al Dojo"):
+                if st.button(get_text("dojo_back_button")):
                     st.rerun()
 
 # --- Pantalla 3: ROI Dashboard (Admin) ---
-elif mode == "ROI Dashboard (Admin)":
+elif mode == get_text("nav_roi"):
     st.header("💰 Calculadora de ROI - Olivia España")
     st.markdown("Análisis de impacto económico basado en adopción y evolución de conocimiento.")
     
@@ -413,7 +436,7 @@ elif mode == "ROI Dashboard (Admin)":
         st.warning("No hay datos de usuarios suficientes para calcular el ROI.")
 
 # --- Pantalla 4: Gestión de Usuarios (Admin) ---
-elif mode == "Gestión de Usuarios (Admin)":
+elif mode == get_text("nav_users"):
     tab_crear, tab_reset = st.tabs(["Crear Nuevo Usuario", "Resetear Contraseña"])
     
     with tab_crear:
@@ -439,7 +462,7 @@ elif mode == "Gestión de Usuarios (Admin)":
             else: st.error(msg)
 
 # --- Pantalla 5: Registro de Prompts (Admin) ---
-elif mode == "Registro de Prompts (Admin)":
+elif mode == get_text("nav_prompts"):
     st.header("📋 Registro de Prompts")
     st.markdown("Visualización de las consultas realizadas por los usuarios (Anónimo).")
     
