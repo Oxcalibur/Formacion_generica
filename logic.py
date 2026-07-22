@@ -183,9 +183,8 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
     
     Ejemplo de estructura JSON requerida:
     [
-        {{"question": "¿Qué es X?", "options": ["Opción 1", "Opción 2", "Opción 3"], "answer": "Opción 1"}}
+        {{"question": "¿Qué es X?", "options": ["A", "B", "C"], "answer": "A"}}
     ]
-    IMPORTANTE: El valor en "answer" DEBE ser una copia exacta del string de la opción correcta dentro de "options". No devuelvas solo la letra.
     """
     
     try:
@@ -206,18 +205,22 @@ def evaluate_quiz(questions, user_answers):
     results = []
     
     for i, q in enumerate(questions):
-        correct = str(q.get("answer", "")).strip()
-        user_ans = str(user_answers.get(i, "")).strip()
-        
-        # Comparación exacta
-        is_correct = (user_ans == correct)
-        
-        # Comparación tolerante (por si la IA devuelve "A" y la opción es "A) texto")
-        if not is_correct and correct and user_ans:
-            if user_ans.startswith(correct + ")") or user_ans.startswith(correct + " ") or user_ans.startswith(correct + "."):
-                is_correct = True
-            elif correct.startswith(user_ans + ")") or correct.startswith(user_ans + " ") or correct.startswith(user_ans + "."):
-                is_correct = True
+        correct_answer_key = q.get("answer")
+        options = q.get("options", [])
+        user_ans = user_answers.get(i)
+
+        # Lógica de comparación robusta
+        # Si la respuesta es una letra (A, B, C...), la convierte al texto de la opción
+        correct_answer_text = correct_answer_key
+        if isinstance(correct_answer_key, str) and len(correct_answer_key) == 1 and 'A' <= correct_answer_key.upper() <= 'Z':
+            try:
+                # Convertir 'A' -> 0, 'B' -> 1, etc.
+                option_index = ord(correct_answer_key.upper()) - ord('A')
+                if 0 <= option_index < len(options):
+                    correct_answer_text = options[option_index]
+            except (TypeError, IndexError):
+                pass # Mantener la clave original si algo falla
+        is_correct = (user_ans == correct_answer_text)
         
         if is_correct:
             score += 10 # 10 puntos por respuesta correcta
@@ -225,7 +228,7 @@ def evaluate_quiz(questions, user_answers):
         results.append({
             "question": q["question"],
             "user_answer": user_ans,
-            "correct_answer": correct,
+            "correct_answer": correct_answer_text,
             "is_correct": is_correct
         })
         
