@@ -56,6 +56,16 @@ class AuthManager:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
             df = conn.read(worksheet="Users", ttl=0)
+            
+            # Lógica robusta para encontrar el spreadsheet
+            url = None
+            try:
+                url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+            except (KeyError, AttributeError): # AttributeError para st.secrets local
+                pass
+            
+            df = conn.read(spreadsheet=url, worksheet="Users", ttl=0) if url else conn.read(worksheet="Users", ttl=0)
+            
             if df.empty:
                 return {}
             df = df.dropna(how="all")
@@ -74,7 +84,16 @@ class AuthManager:
             df.index.name = "username"
             df.reset_index(inplace=True)
             conn = st.connection("gsheets", type=GSheetsConnection)
-            conn.update(worksheet="Users", data=df)
+            
+            # Lógica robusta para encontrar el spreadsheet al guardar
+            url = None
+            try:
+                url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+            except (KeyError, AttributeError):
+                pass
+            
+            # Usar la URL si existe, de lo contrario, comportamiento por defecto
+            conn.update(spreadsheet=url, worksheet="Users", data=df) if url else conn.update(worksheet="Users", data=df)
         except Exception as e:
             st.error(f"Error guardando en Google Sheets: {e}")
 
