@@ -27,7 +27,7 @@ def hybrid_chat_input(placeholder="¿En qué puedo ayudarte hoy?"):
                 stop_prompt="🛑 Detener",
                 just_once=True,
                 use_container_width=True, # Aprovechamos novedad de v0.0.8
-                key='stt_input'
+                key='stt_input_2'
             )
     else:
         st.error(f"⚠️ Error cargando la librería de voz: {error_msg}. Detén la app (Ctrl+C) y vuelve a ejecutar 'streamlit run streamlit_app.py'")

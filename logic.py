@@ -364,14 +364,8 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
                                 
                             if isinstance(external_results, list) and len(external_results) > 0:
                                 recommendations.extend(external_results)
-                            else:
-                                # Fallback: Enlace a la búsqueda si la API de YouTube falla o no está configurada
-                                formatted_query = query.replace(" ", "+")
-                                youtube_search_url = f"https://www.youtube.com/results?search_query={formatted_query}"
-                                rec["url"] = youtube_search_url
-                                if isinstance(external_results, str) and "ERROR" in external_results:
-                                    rec["reason"] += f" (Nota técnica: {external_results})"
-                                recommendations.append(rec)
+                            # Si falla o no hay resultados reales, descartamos esta recomendación externa 
+                            # para asegurarnos de que el usuario solo reciba videos que realmente existen.
                         else:
                             recommendations.append(rec)
                 else:
