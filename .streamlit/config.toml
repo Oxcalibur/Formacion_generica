@@ -3,7 +3,7 @@ base="light"
 primaryColor="#00a8e8"
 [server]
 # Aumenta el número de hilos concurrentes que procesan a los usuarios
-maxThreads = 50
+# maxThreads = 50
 # Libera memoria de forma más agresiva cuando un usuario cierra la pestaña
 runOnSave = false
 

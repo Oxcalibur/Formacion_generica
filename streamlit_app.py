@@ -210,9 +210,13 @@ if mode == get_text("nav_assistant"):
             # Prepara un historial limpio para la IA (sin recomendaciones previas para no contaminar contexto)
             clean_history = [{"role": m.get("role"), "content": m.get("content")} for m in st.session_state.chat_history]
             
-            base_prompt = CLIENT_CONFIG["system_prompt"].format(
-                client_name=CLIENT_CONFIG["client_name"], 
-                language=st.session_state.language
+            import json
+            base_prompt = CLIENT_CONFIG["system_prompt"].replace(
+                "{client_name}", CLIENT_CONFIG["client_name"]
+            ).replace(
+                "{language}", st.session_state.language
+            ).replace(
+                "{multimedia_index_placeholder}", json.dumps(local_resources, ensure_ascii=False) if local_resources else "[]"
             )
             current_role = st.session_state.get("user_role", "Estudiante")
             role_context = (
@@ -411,7 +415,7 @@ elif mode == get_text("nav_roi"):
             
             if not df_proj.empty:
                 # 1. Gráfico de Break Even
-                st.plotly_chart(graficar_break_even(df_proj), use_container_width=True)
+                st.plotly_chart(graficar_break_even(df_proj), width="stretch")
                 
                 # KPI de Break Even
                 if df_proj['break_even_alcanzado'].any():
@@ -423,9 +427,9 @@ elif mode == get_text("nav_roi"):
                 # 2. Gráficos de Detalle (ROI e Impacto)
                 c1, c2 = st.columns(2)
                 with c1:
-                    st.plotly_chart(graficar_evolucion_roi(df_proj), use_container_width=True)
+                    st.plotly_chart(graficar_evolucion_roi(df_proj), width="stretch")
                 with c2:
-                    st.plotly_chart(graficar_impacto_aprendizaje(df_proj), use_container_width=True)
+                    st.plotly_chart(graficar_impacto_aprendizaje(df_proj), width="stretch")
                 
                 # Resumen Final
                 total_saved = df_proj.iloc[-1]["ahorro_acumulado"]
@@ -567,7 +571,7 @@ elif mode == get_text("nav_prompts"):
                     
                     # Capturar evento de clic en el gráfico
                     # Añadimos key dinámica para forzar refresco correcto al cambiar selección
-                    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points", key=f"map_{selection}")
+                    event = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode="points", key=f"map_{selection}")
                     
                     # Lógica: Si se toca el mapa, actualizar el filtro (Maestro)
                     if event and event.get("selection") and event["selection"]["points"]:
@@ -592,7 +596,7 @@ elif mode == get_text("nav_prompts"):
                         # Espaciado para alinear con el selectbox
                         st.write("") 
                         st.write("")
-                        if st.button("Generar Plan", use_container_width=True):
+                        if st.button("Generar Plan", width="stretch"):
                             st.session_state.gen_plan_clicked = True
                     
                     # Mostrar resultado si se ha solicitado (o usar estado si se prefiere persistencia simple)

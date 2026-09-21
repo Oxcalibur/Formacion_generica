@@ -83,11 +83,20 @@ def buscar_youtube_externo(tema: str) -> Union[str, List[Dict[str, str]]]:
     if not build:
         return "ERROR_EXTERNAL_SEARCH (Library google-api-python-client missing)"
     
-    if not YOUTUBE_API_KEY:
+    # Leer dinámicamente para soportar recargas en caliente de Streamlit
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
+        try:
+            import streamlit as st
+            api_key = st.secrets.get("YOUTUBE_API_KEY")
+        except Exception:
+            pass
+
+    if not api_key:
         return "ERROR_EXTERNAL_SEARCH (Missing YOUTUBE_API_KEY)"
 
     try:
-        youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+        youtube = build('youtube', 'v3', developerKey=api_key)
         
         # Enriquecemos la query para asegurar calidad corporativa
         query_enrichida = f"{tema} (management | leadership | ted talk | business training)"
@@ -122,5 +131,5 @@ def buscar_youtube_externo(tema: str) -> Union[str, List[Dict[str, str]]]:
         return resultados
 
     except Exception as e:
-        print(f"Error en búsqueda externa: {e}")
+        # print(f"Error en búsqueda externa: {e}")
         return "ERROR_EXTERNAL_SEARCH"
