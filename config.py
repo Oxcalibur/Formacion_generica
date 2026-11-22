@@ -24,7 +24,7 @@ CLIENT_CONFIG = {
         "avg_hourly_cost": 50.0,
         "min_sessions": 1
     },
-    "log_prompts": False, # Desactivado: no registrar los prompts de los usuarios en hoja de cálculo
+    "log_prompts": True, # Registrar los prompts de los usuarios en Google Sheets (pestaña Prompts_Inmobiliaria)
     "prompts_worksheet_name": get_conf("prompts_worksheet_name", "Prompts_Inmobiliaria"), # Asegúrate de crear esta pestaña en tu Google Sheet
     "system_prompt": """
 # IDENTIDAD Y MISIÓN

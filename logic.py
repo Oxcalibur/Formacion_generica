@@ -1308,14 +1308,18 @@ def generate_dynamic_topics(knowledge_context):
         print(f"Error generando temas dinámicos: {e}")
         return default_topics
 
+def _get_gsheets_spreadsheet_url() -> Optional[str]:
+    """Obtiene de forma segura la URL del Google Sheet desde st.secrets si está configurada."""
+    try:
+        return st.secrets["connections"]["gsheets"]["spreadsheet"]
+    except Exception:
+        return None
+
+
 def log_user_prompt(prompt_text: str, worksheet_name: str, role: str = "User"):
     """
     Registra el prompt de un usuario en una hoja de cálculo de Google Sheets.
-    
-    Args:
-        prompt_text (str): El texto del prompt introducido por el usuario.
-        worksheet_name (str): El nombre de la hoja de cálculo donde se guardará el prompt.
-        role (str): El rol del usuario que realiza la consulta.
+    Soporta pestañas recién creadas/vacías y pasa explícitamente spreadsheet=url.
     """
     if GSheetsConnection is None:
         print("GSheetsConnection no disponible. Saltando registro de prompt.")
@@ -1326,24 +1330,42 @@ def log_user_prompt(prompt_text: str, worksheet_name: str, role: str = "User"):
 
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
+        url = _get_gsheets_spreadsheet_url()
         
         new_prompt_df = pd.DataFrame([
-            {"timestamp": datetime.datetime.now(), "role": role, "prompt": prompt_text}
+            {
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "role": role,
+                "prompt": prompt_text,
+            }
         ])
 
         try:
-            existing_df = conn.read(worksheet=worksheet_name, ttl=0)
-            if existing_df.empty or ("Unnamed: 0" in existing_df.columns and len(existing_df.columns) == 1):
+            existing_df = (
+                conn.read(spreadsheet=url, worksheet=worksheet_name, ttl=0)
+                if url else conn.read(worksheet=worksheet_name, ttl=0)
+            )
+            if existing_df is None or existing_df.empty:
                 existing_df = pd.DataFrame(columns=["timestamp", "role", "prompt"])
-        except Exception:  # La hoja probablemente no existe
+            else:
+                existing_df = existing_df.dropna(how="all")
+                if not {"timestamp", "role", "prompt"}.issubset(set(existing_df.columns)):
+                    existing_df = pd.DataFrame(columns=["timestamp", "role", "prompt"])
+                else:
+                    existing_df = existing_df[["timestamp", "role", "prompt"]]
+        except Exception:
             existing_df = pd.DataFrame(columns=["timestamp", "role", "prompt"])
 
         updated_df = pd.concat([existing_df, new_prompt_df], ignore_index=True)
-        conn.update(worksheet=worksheet_name, data=updated_df)
+        if url:
+            conn.update(spreadsheet=url, worksheet=worksheet_name, data=updated_df)
+        else:
+            conn.update(worksheet=worksheet_name, data=updated_df)
 
     except Exception as e:
         # Fallo silencioso para no impactar la experiencia de usuario
-        print(f"Error al registrar prompt en Google Sheets: {e}")
+        print(f"Error al registrar prompt en Google Sheets ({worksheet_name}): {e}")
+
 
 def get_logged_prompts(worksheet_name: str):
     """Recupera los prompts registrados desde Google Sheets."""
@@ -1352,10 +1374,16 @@ def get_logged_prompts(worksheet_name: str):
 
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        df = conn.read(worksheet=worksheet_name, ttl=0)
-        return df
+        url = _get_gsheets_spreadsheet_url()
+        df = (
+            conn.read(spreadsheet=url, worksheet=worksheet_name, ttl=0)
+            if url else conn.read(worksheet=worksheet_name, ttl=0)
+        )
+        if df is None or df.empty:
+            return pd.DataFrame()
+        return df.dropna(how="all")
     except Exception as e:
-        print(f"Error leyendo prompts: {e}")
+        print(f"Error leyendo prompts ({worksheet_name}): {e}")
         return pd.DataFrame()
 
 def calculate_roi_metrics(time_saved_per_interaction, cost_per_hour, participation_threshold=10):
