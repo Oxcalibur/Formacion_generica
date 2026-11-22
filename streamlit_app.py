@@ -8,7 +8,7 @@ from logic import (
     get_chat_response, load_knowledge_base, generate_dynamic_topics, 
     calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, 
     graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts, analyze_prompt_patterns, graficar_patrones_prompts, 
-    calculate_historical_improvement_rate, load_multimedia_resources
+    calculate_historical_improvement_rate, load_multimedia_resources, extract_ephemeral_document
 )
 from auth import get_auth_manager
 from componentes_ui import hybrid_chat_input
@@ -45,6 +45,10 @@ if "knowledge_base" not in st.session_state or not st.session_state.knowledge_ba
     st.session_state.knowledge_base = load_knowledge_base(kb_path)
 if "dynamic_topics" not in st.session_state:
     st.session_state.dynamic_topics = []
+if "ephemeral_doc" not in st.session_state:
+    st.session_state.ephemeral_doc = None
+if "doc_uploader_key" not in st.session_state:
+    st.session_state.doc_uploader_key = 0
 
 # --- Control de Acceso (Login) ---
 if SECURITY_CONFIG.get("enable_auth", False):
@@ -117,7 +121,8 @@ with st.sidebar:
         if st.button(get_text("sidebar_logout_button")):
             # Limpiar variables de sesión para asegurar que el próximo usuario cargue datos limpios
             keys_to_reset = ["logged_in", "username", "score", "active_sessions", "chat_history", 
-                             "quiz_active", "current_questions", "session_interaction_recorded", "user_role", "language"]
+                             "quiz_active", "current_questions", "session_interaction_recorded", "user_role", "language",
+                             "ephemeral_doc", "doc_uploader_key"]
             for key in keys_to_reset:
                 if key in st.session_state:
                     del st.session_state[key]
@@ -167,6 +172,45 @@ if mode == get_text("nav_assistant"):
     local_resources = load_multimedia_resources(kb_path)
     if not local_resources and st.session_state.get("username") == "admin":
         st.info("💡 **Admin Tip:** Para habilitar recomendaciones de vídeos locales, actualiza `multimedia.csv` y `video_index.json` en la carpeta `knowledge_base`.", icon="ℹ️")
+
+    # Documento temporal del usuario (solo en memoria para esta conversación; nunca se almacena)
+    with st.expander(get_text("doc_uploader_title"), expanded=bool(st.session_state.get("ephemeral_doc"))):
+        st.caption(get_text("doc_privacy_note"))
+        uploaded_file = st.file_uploader(
+            get_text("doc_uploader_label"),
+            type=["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp"],
+            key=f"ephemeral_doc_uploader_{st.session_state.doc_uploader_key}",
+        )
+        if uploaded_file is not None:
+            current_doc = st.session_state.get("ephemeral_doc")
+            file_sig = (uploaded_file.name, uploaded_file.size)
+            if not current_doc or current_doc.get("_sig") != file_sig:
+                parsed_doc = extract_ephemeral_document(uploaded_file)
+                if parsed_doc.get("error"):
+                    st.error(parsed_doc["error"])
+                else:
+                    parsed_doc["_sig"] = file_sig
+                    st.session_state.ephemeral_doc = parsed_doc
+        elif st.session_state.get("ephemeral_doc") is not None:
+            # Si el usuario pulsa la 'X' del uploader, eliminar el documento de memoria al instante
+            st.session_state.ephemeral_doc = None
+
+        active_doc = st.session_state.get("ephemeral_doc")
+        col_doc_info, col_doc_rm, col_new_chat = st.columns([3, 1, 1])
+        with col_doc_info:
+            if active_doc:
+                st.success(get_text("doc_loaded_msg").format(name=active_doc["name"], summary=active_doc["summary"]))
+        with col_doc_rm:
+            if active_doc and st.button(get_text("doc_remove_button"), use_container_width=True):
+                st.session_state.ephemeral_doc = None
+                st.session_state.doc_uploader_key += 1
+                st.rerun()
+        with col_new_chat:
+            if st.button(get_text("doc_new_chat_button"), use_container_width=True):
+                st.session_state.chat_history = []
+                st.session_state.ephemeral_doc = None
+                st.session_state.doc_uploader_key += 1
+                st.rerun()
 
     # Inicializar conversación si está vacía
     if not st.session_state.chat_history:
@@ -233,7 +277,8 @@ if mode == get_text("nav_assistant"):
                 full_prompt, 
                 knowledge_context=st.session_state.knowledge_base,
                 multimedia_index=local_resources,
-                kb_folder=kb_path
+                kb_folder=kb_path,
+                ephemeral_doc=st.session_state.get("ephemeral_doc")
             )
             
             text_response = response_data.get("text", "No he podido generar una respuesta.")

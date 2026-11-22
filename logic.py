@@ -17,9 +17,12 @@ except ImportError:
     buscar_youtube_externo = None
     requiere_video_post_oct_2026 = None
     POST_OCT_2026_PREFIX = "2026-11-01"
+import io
 import math
 import re
 import unicodedata
+import zipfile
+import xml.etree.ElementTree as ET
 import pandas as pd
 import streamlit as st
 import json
@@ -618,6 +621,119 @@ def llamar_gemini_con_rotacion_y_reintento(model_name, contents, config=None, ma
     raise last_error or Exception("Cuota agotada en TODAS las API Keys.")
 
 
+MAX_EPHEMERAL_FILE_BYTES = 15 * 1024 * 1024  # 15 MB máximo en memoria
+
+
+def extract_ephemeral_document(uploaded_file) -> Dict[str, Any]:
+    """
+    Lee un documento subido por el usuario ÚNICAMENTE en memoria (sin guardarlo en disco ni en caché)
+    para usarlo solo durante la conversación actual.
+    Soporta PDF (texto o escaneado), DOCX, TXT, MD e imágenes (PNG/JPG/WEBP).
+    """
+    if uploaded_file is None:
+        return {}
+
+    filename = getattr(uploaded_file, "name", "documento")
+    ext = os.path.splitext(filename)[1].lower()
+    raw_bytes = uploaded_file.getvalue()
+
+    if not raw_bytes:
+        return {"error": "El archivo está vacío."}
+    if len(raw_bytes) > MAX_EPHEMERAL_FILE_BYTES:
+        return {"error": "El archivo supera el límite de 15 MB para lectura en memoria."}
+
+    # 1. Imágenes (fotos de contrato, anexos o burofax)
+    if ext in (".png", ".jpg", ".jpeg", ".webp"):
+        mime_map = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+        }
+        return {
+            "name": filename,
+            "mode": "binary",
+            "mime_type": mime_map[ext],
+            "raw_bytes": raw_bytes,
+            "text": "",
+            "summary": f"Imagen adjunta en memoria ({len(raw_bytes) // 1024} KB)",
+        }
+
+    # 2. PDF (extracción de texto en memoria; si es escaneado, se pasa binario a Gemini)
+    if ext == ".pdf":
+        extracted_text = ""
+        if pypdf:
+            try:
+                reader = pypdf.PdfReader(io.BytesIO(raw_bytes))
+                extracted_text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+            except Exception:
+                extracted_text = ""
+
+        if len(extracted_text) >= 40:
+            return {
+                "name": filename,
+                "mode": "text",
+                "mime_type": "application/pdf",
+                "raw_bytes": None,
+                "text": extracted_text,
+                "summary": f"PDF leído en memoria ({len(extracted_text):,} caracteres)",
+            }
+        return {
+            "name": filename,
+            "mode": "binary",
+            "mime_type": "application/pdf",
+            "raw_bytes": raw_bytes,
+            "text": "",
+            "summary": f"PDF escaneado listo para lectura visual en memoria ({len(raw_bytes) // 1024} KB)",
+        }
+
+    # 3. Word (.docx) usando solo librería estándar (zipfile + ElementTree)
+    if ext == ".docx":
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+                xml_content = zf.read("word/document.xml")
+            root = ET.fromstring(xml_content)
+            paragraphs = []
+            for p in root.iter():
+                if p.tag.endswith("}p"):
+                    texts = [node.text for node in p.iter() if node.tag.endswith("}t") and node.text]
+                    if texts:
+                        paragraphs.append("".join(texts))
+            extracted_text = "\n".join(paragraphs).strip()
+            if not extracted_text:
+                return {"error": "No se pudo extraer texto del documento Word (.docx)."}
+            return {
+                "name": filename,
+                "mode": "text",
+                "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "raw_bytes": None,
+                "text": extracted_text,
+                "summary": f"Word leído en memoria ({len(extracted_text):,} caracteres)",
+            }
+        except Exception as e:
+            return {"error": f"No se pudo leer el archivo Word (.docx): {e}"}
+
+    # 4. Texto plano (.txt, .md)
+    if ext in (".txt", ".md"):
+        try:
+            extracted_text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            extracted_text = raw_bytes.decode("latin-1", errors="replace")
+        extracted_text = extracted_text.strip()
+        if not extracted_text:
+            return {"error": "El archivo de texto está vacío."}
+        return {
+            "name": filename,
+            "mode": "text",
+            "mime_type": "text/plain",
+            "raw_bytes": None,
+            "text": extracted_text,
+            "summary": f"Texto leído en memoria ({len(extracted_text):,} caracteres)",
+        }
+
+    return {"error": f"Formato no soportado ({ext}). Usa PDF, DOCX, TXT, MD o imagen (PNG/JPG)."}
+
+
 def get_chat_response(
     history: list,
     user_input: str,
@@ -625,6 +741,7 @@ def get_chat_response(
     knowledge_context: str = "",
     multimedia_index: Optional[list] = None,
     kb_folder: Optional[str] = None,
+    ephemeral_doc: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Obtiene respuesta del chat de Gemini usando recuperación multi-carpeta sobre knowledge_base."""
     client = init_gemini()
@@ -662,12 +779,43 @@ def get_chat_response(
                 )
             )
             expected_role = "model" if role == "user" else "user"
+
+    # Inyectar documento temporal del usuario (solo en memoria para esta sesión; nunca persistido)
+    ephemeral_doc_block = ""
+    retrieval_query = user_input or ""
+    if ephemeral_doc and not ephemeral_doc.get("error"):
+        doc_name = ephemeral_doc.get("name", "documento_usuario")
+        if ephemeral_doc.get("mode") == "text" and ephemeral_doc.get("text"):
+            doc_text = ephemeral_doc["text"][:60000]
+            ephemeral_doc_block = (
+                f"\n\n<documento_usuario_solo_esta_sesion nombre=\"{doc_name}\">\n"
+                f"{doc_text}\n"
+                "</documento_usuario_solo_esta_sesion>\n"
+                "NOTA: Este documento ha sido adjuntado por el usuario SOLO para esta conversación (no se almacena). "
+                "Úsalo para extraer fechas, tipo de alquiler, ubicación y cláusulas exactas sin volver a preguntarle datos que ya aparezcan en él."
+            )
+            retrieval_query = f"{retrieval_query} {doc_text[:1500]}"
+        elif ephemeral_doc.get("mode") == "binary" and ephemeral_doc.get("raw_bytes") and contents:
+            # Adjuntar el archivo binario (PDF escaneado o foto) al último mensaje del usuario
+            last_user_idx = next((i for i in range(len(contents) - 1, -1, -1) if contents[i].role == "user"), None)
+            if last_user_idx is not None:
+                contents[last_user_idx].parts.append(
+                    types.Part.from_bytes(
+                        data=ephemeral_doc["raw_bytes"],
+                        mime_type=ephemeral_doc.get("mime_type", "application/pdf"),
+                    )
+                )
+                ephemeral_doc_block = (
+                    f"\n\nNOTA SOBRE ARCHIVO ADJUNTO ('{doc_name}'): El usuario ha adjuntado este documento/imagen "
+                    "SOLO en memoria para esta conversación (no se almacena). Léelo directamente y extrae los datos "
+                    "relevantes (fechas, cláusulas, importes, ubicación) sin pedir al usuario datos que ya figuren en el archivo."
+                )
     
     resolved_kb_folder = kb_folder or CLIENT_CONFIG.get("knowledge_base_folder")
     if resolved_kb_folder and os.path.exists(resolved_kb_folder):
         contexto_seguro = retrieve_relevant_knowledge(
             resolved_kb_folder,
-            user_input,
+            retrieval_query,
             history=history,
             max_chars=90000,
         )
@@ -675,7 +823,7 @@ def get_chat_response(
         contexto_seguro = knowledge_context[:90000] if knowledge_context else "No hay documentos cargados."
 
     full_system_instruction = (
-        f"{system_instruction}{external_hint}\n\n"
+        f"{system_instruction}{external_hint}{ephemeral_doc_block}\n\n"
         f"Información de Contexto (Base Documental en knowledge_base):\n{contexto_seguro}"
     )
 

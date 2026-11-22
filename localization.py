@@ -44,6 +44,12 @@ TRANSLATIONS = {
         "assistant_input_placeholder": "Describe tu consulta sobre alquiler, contrato, renta, fianza o prórroga...",
         "assistant_thinking": "Consultando normativa y base documental...",
         "assistant_welcome_msg": "Hola, soy tu **{client_name}**, especialista en derecho de arrendamientos urbanos en España. Cuéntame qué consulta o situación tienes con tu vivienda o contrato de alquiler y te ayudaré paso a paso.",
+        "doc_uploader_title": "📎 Adjuntar contrato o documento (solo para esta conversación)",
+        "doc_privacy_note": "🔒 Privacidad: el documento se lee únicamente en memoria para esta consulta y NO se guarda ni se conserva para futuras conversaciones.",
+        "doc_uploader_label": "Sube tu contrato, anexo, burofax o foto (PDF, Word, TXT o imagen)",
+        "doc_loaded_msg": "📄 Documento activo solo en esta sesión: **{name}** ({summary})",
+        "doc_remove_button": "🗑️ Quitar",
+        "doc_new_chat_button": "🔄 Nueva consulta",
 
         # Dojo
         "dojo_header": "🥋 Dojo Legal Inmobiliario",
@@ -107,6 +113,12 @@ TRANSLATIONS = {
         "assistant_input_placeholder": "Describe your rental, contract, rent update, deposit or extension question...",
         "assistant_thinking": "Consulting Spanish tenancy regulations and legal documents...",
         "assistant_welcome_msg": "Hello, I'm your **{client_name}**, specialized in Spanish urban tenancy law. Tell me about your rental property or lease question and I'll guide you step by step.",
+        "doc_uploader_title": "📎 Attach contract or document (this conversation only)",
+        "doc_privacy_note": "🔒 Privacy: your document is read strictly in memory for this chat and is NOT saved or kept for future conversations.",
+        "doc_uploader_label": "Upload your lease, addendum, notice or photo (PDF, Word, TXT or image)",
+        "doc_loaded_msg": "📄 Active for this session only: **{name}** ({summary})",
+        "doc_remove_button": "🗑️ Remove",
+        "doc_new_chat_button": "🔄 New chat",
 
         "dojo_header": "🥋 Real Estate Legal Dojo",
         "dojo_caption": "Test your knowledge of Spanish rental regulations.  \n**Profile:** {user_role}",
