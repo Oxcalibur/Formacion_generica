@@ -221,7 +221,9 @@ if mode == get_text("nav_assistant"):
             current_role = st.session_state.get("user_role", "Propietario particular")
             role_context = (
                 f"\n\nCONTEXTO DEL USUARIO:\nPerfil declarado en la plataforma: {current_role}\n"
-                "INSTRUCCIÓN: Respeta estrictamente el Protocolo Interactivo de Triaje (Fase 1) antes de emitir un veredicto definitivo, cálculo o borrador, preguntando solo las variables críticas que falten."
+                "INSTRUCCIÓN: Haz el triaje de forma sutil, progresiva y en lenguaje cotidiano, adaptando cada nueva pregunta a lo que el usuario acaba de responder (1-2 preguntas breves por turno). "
+                "Si el usuario no entiende un término técnico, explícaselo en lenguaje sencillo antes de continuar. "
+                "Cuando emitas la respuesta final, muestra siempre primero un breve resumen de los datos recopilados sobre los que basas el resultado."
             )
             full_prompt = base_prompt + role_context
             
