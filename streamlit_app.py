@@ -8,7 +8,7 @@ from logic import (
     get_chat_response, load_knowledge_base, generate_dynamic_topics, 
     calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, 
     graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts, analyze_prompt_patterns, graficar_patrones_prompts, 
-    calculate_historical_improvement_rate, load_multimedia_resources, extract_ephemeral_document
+    calculate_historical_improvement_rate, load_multimedia_resources, extract_ephemeral_document, generate_pdf_bytes
 )
 from auth import get_auth_manager
 from componentes_ui import hybrid_chat_input
@@ -222,9 +222,32 @@ if mode == get_text("nav_assistant"):
         st.session_state.chat_history.append({"role": "assistant", "content": welcome_msg})
 
     # Mostrar historial
-    for msg in st.session_state.chat_history:
+    for msg_idx, msg in enumerate(st.session_state.chat_history):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+
+            # Botones de descarga en PDF para documentos formales generados (contratos, burofax, anexos...)
+            if msg.get("documents"):
+                for doc_idx, doc in enumerate(msg["documents"]):
+                    pdf_bytes = generate_pdf_bytes(doc.get("title", "Documento Legal"), doc.get("content", ""))
+                    st.download_button(
+                        label=get_text("doc_download_pdf_button").format(title=doc.get("title", "Documento")),
+                        data=pdf_bytes,
+                        file_name=doc.get("filename", "documento_legal.pdf"),
+                        mime="application/pdf",
+                        key=f"dl_doc_{msg_idx}_{doc_idx}",
+                    )
+            elif msg["role"] == "assistant" and msg_idx > 0 and len(msg.get("content", "")) > 250:
+                # Opción secundaria para descargar cualquier respuesta jurídica completa en PDF
+                pdf_bytes = generate_pdf_bytes("Orientacion_Legal_Inmobiliaria", msg.get("content", ""))
+                st.download_button(
+                    label=get_text("response_download_pdf_button"),
+                    data=pdf_bytes,
+                    file_name=f"orientacion_legal_{msg_idx}.pdf",
+                    mime="application/pdf",
+                    key=f"dl_resp_{msg_idx}",
+                )
+
             # Revisa si hay recomendaciones en el mensaje y las muestra
             if msg.get("recommendations"):
                 st.markdown("--- \n**Recursos recomendados:**")
@@ -283,9 +306,15 @@ if mode == get_text("nav_assistant"):
             
             text_response = response_data.get("text", "No he podido generar una respuesta.")
             recommendations = response_data.get("recommendations", [])
+            documents = response_data.get("documents", [])
 
-        # Guardar la respuesta estructurada (texto + recomendaciones) en el historial
-        st.session_state.chat_history.append({"role": "assistant", "content": text_response, "recommendations": recommendations})
+        # Guardar la respuesta estructurada (texto + recomendaciones + documentos PDF) en el historial
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": text_response,
+            "recommendations": recommendations,
+            "documents": documents,
+        })
         st.rerun()
 # --- Pantalla 2: Dojo (Quiz) ---
 elif mode == get_text("nav_dojo"):

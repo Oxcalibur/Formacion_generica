@@ -50,6 +50,8 @@ TRANSLATIONS = {
         "doc_loaded_msg": "📄 Documento activo solo en esta sesión: **{name}** ({summary})",
         "doc_remove_button": "🗑️ Quitar",
         "doc_new_chat_button": "🔄 Nueva consulta",
+        "doc_download_pdf_button": "📄 Descargar '{title}' en PDF",
+        "response_download_pdf_button": "📥 Descargar respuesta en PDF",
 
         # Dojo
         "dojo_header": "🥋 Dojo Legal Inmobiliario",
@@ -119,6 +121,8 @@ TRANSLATIONS = {
         "doc_loaded_msg": "📄 Active for this session only: **{name}** ({summary})",
         "doc_remove_button": "🗑️ Remove",
         "doc_new_chat_button": "🔄 New chat",
+        "doc_download_pdf_button": "📄 Download '{title}' as PDF",
+        "response_download_pdf_button": "📥 Download response as PDF",
 
         "dojo_header": "🥋 Real Estate Legal Dojo",
         "dojo_caption": "Test your knowledge of Spanish rental regulations.  \n**Profile:** {user_role}",

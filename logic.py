@@ -17,6 +17,10 @@ except ImportError:
     buscar_youtube_externo = None
     requiere_video_post_oct_2026 = None
     POST_OCT_2026_PREFIX = "2026-11-01"
+try:
+    from fpdf import FPDF
+except ImportError:
+    FPDF = None
 import io
 import math
 import re
@@ -621,6 +625,313 @@ def llamar_gemini_con_rotacion_y_reintento(model_name, contents, config=None, ma
     raise last_error or Exception("Cuota agotada en TODAS las API Keys.")
 
 
+LEGAL_DISCLAIMER_PDF = (
+    "Orientacion juridica automatizada basada en la normativa espanola vigente. "
+    "No sustituye el asesoramiento de un abogado colegiado para procedimientos judiciales."
+)
+
+
+def _sanitize_pdf_text(text: str, allow_euro_cp1252: bool = False) -> str:
+    """Limpia sintaxis Markdown básica, comillas tipográficas y emojis para evitar errores de codificación PDF."""
+    if not text:
+        return ""
+    replacements = {
+        "“": '"',
+        "”": '"',
+        "‘": "'",
+        "’": "'",
+        "–": "-",
+        "—": "-",
+        "…": "...",
+        "•": "-",
+        "▪": "-",
+        "\u00a0": " ",
+        "\t": "    ",
+    }
+    if not allow_euro_cp1252:
+        replacements["€"] = "EUR"
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+
+    # Quitar formato inline de Markdown (**negrita**, *cursiva*, `código`)
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"__(.+?)__", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    # Quitar enlaces Markdown [texto](url) dejando el texto visible
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 (\2)", text)
+
+    encoding = "cp1252" if allow_euro_cp1252 else "latin-1"
+    cleaned_chars = []
+    for ch in text:
+        try:
+            ch.encode(encoding)
+            cleaned_chars.append(ch)
+        except UnicodeEncodeError:
+            # Descartar emojis u otros caracteres fuera del juego de la fuente
+            continue
+    return "".join(cleaned_chars)
+
+
+def _slugify_filename(title: str, default: str = "documento_legal") -> str:
+    """Genera un nombre de archivo PDF limpio y seguro."""
+    norm = _normalize_search_text(title or default)
+    slug = re.sub(r"[^a-z0-9]+", "_", norm).strip("_")
+    return f"{slug[:60] or default}.pdf"
+
+
+def _generate_simple_pdf_bytes(title: str, markdown_text: str, include_disclaimer: bool = True) -> bytes:
+    """
+    Generador PDF 1.4 puro en Python (sin dependencias externas) con WinAnsiEncoding.
+    Sirve como respaldo automático si fpdf2 no está instalado en el entorno.
+    """
+    import textwrap
+
+    def _pdf_escape(s: str) -> str:
+        return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+    safe_title = _sanitize_pdf_text(title or "Documento Legal", allow_euro_cp1252=True)
+    fecha_str = datetime.datetime.now().strftime("%d/%m/%Y")
+
+    # Preparar líneas con estilo: (texto, font_name, font_size, line_height)
+    styled_lines: List[tuple] = [
+        (safe_title, "F2", 14, 20),
+        (f"Asesor Legal Inmobiliario  |  Fecha: {fecha_str}", "F1", 9, 14),
+        ("-" * 88, "F1", 9, 14),
+    ]
+
+    for raw_line in (markdown_text or "").splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            styled_lines.append(("", "F1", 10, 8))
+            continue
+        if stripped in ("---", "***", "___"):
+            styled_lines.append(("-" * 88, "F1", 9, 12))
+            continue
+
+        if stripped.startswith("### "):
+            txt = _sanitize_pdf_text(stripped[4:], allow_euro_cp1252=True)
+            for w in textwrap.wrap(txt, width=78) or [""]:
+                styled_lines.append((w, "F2", 11, 15))
+        elif stripped.startswith("## "):
+            txt = _sanitize_pdf_text(stripped[3:], allow_euro_cp1252=True)
+            styled_lines.append(("", "F1", 10, 4))
+            for w in textwrap.wrap(txt, width=74) or [""]:
+                styled_lines.append((w, "F2", 12, 16))
+        elif stripped.startswith("# "):
+            txt = _sanitize_pdf_text(stripped[2:], allow_euro_cp1252=True)
+            styled_lines.append(("", "F1", 10, 6))
+            for w in textwrap.wrap(txt, width=68) or [""]:
+                styled_lines.append((w, "F2", 13, 18))
+        else:
+            is_bullet = stripped.startswith(("- ", "* "))
+            prefix = "  - " if is_bullet else ""
+            body = stripped[2:] if is_bullet else stripped
+            txt = _sanitize_pdf_text(body, allow_euro_cp1252=True)
+            wrapped = textwrap.wrap(txt, width=82 if is_bullet else 86) or [""]
+            for i, w in enumerate(wrapped):
+                styled_lines.append(((prefix if i == 0 else ("    " if is_bullet else "")) + w, "F1", 10, 14))
+
+    if include_disclaimer:
+        styled_lines.append(("", "F1", 10, 10))
+        styled_lines.append(("-" * 88, "F1", 8, 12))
+        for w in textwrap.wrap(LEGAL_DISCLAIMER_PDF, width=95):
+            styled_lines.append((w, "F1", 8, 11))
+
+    # Paginación A4 (595 x 842 pt)
+    page_w, page_h = 595, 842
+    margin_x, top_y, bottom_y = 50, 790, 55
+    pages_lines: List[List[tuple]] = []
+    cur_page: List[tuple] = []
+    y = top_y
+
+    for line_item in styled_lines:
+        lh = line_item[3]
+        if y - lh < bottom_y and cur_page:
+            pages_lines.append(cur_page)
+            cur_page = []
+            y = top_y
+        cur_page.append((line_item[0], line_item[1], line_item[2], y))
+        y -= lh
+    if cur_page:
+        pages_lines.append(cur_page)
+
+    # Ensamblar objetos PDF 1.4
+    objects: List[bytes] = []
+
+    def add_obj(content: bytes) -> int:
+        objects.append(content)
+        return len(objects)
+
+    font1_id = add_obj(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    font2_id = add_obj(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>")
+
+    page_ids = []
+    total_pages = len(pages_lines)
+    pages_placeholder_id = add_obj(b"")  # Se rellena al final
+
+    for page_idx, plines in enumerate(pages_lines, start=1):
+        cmds = ["BT"]
+        for txt, fname, fsize, ypos in plines:
+            if txt:
+                safe_cmd_txt = _pdf_escape(txt)
+                cmds.append(f"/{fname} {fsize} Tf 1 0 0 1 {margin_x} {ypos} Tm ({safe_cmd_txt}) Tj")
+        footer_txt = _pdf_escape(f"Pagina {page_idx} de {total_pages}")
+        cmds.append(f"/F1 8 Tf 1 0 0 1 {page_w - 110} 30 Tm ({footer_txt}) Tj")
+        cmds.append("ET")
+        stream_bytes = "\n".join(cmds).encode("cp1252", errors="replace")
+        stream_obj = (
+            f"<< /Length {len(stream_bytes)} >>\nstream\n".encode("ascii")
+            + stream_bytes
+            + b"\nendstream"
+        )
+        content_id = add_obj(stream_obj)
+        page_obj = (
+            f"<< /Type /Page /Parent {pages_placeholder_id} 0 R "
+            f"/MediaBox [0 0 {page_w} {page_h}] "
+            f"/Resources << /Font << /F1 {font1_id} 0 R /F2 {font2_id} 0 R >> >> "
+            f"/Contents {content_id} 0 R >>"
+        ).encode("ascii")
+        page_ids.append(add_obj(page_obj))
+
+    kids = " ".join(f"{pid} 0 R" for pid in page_ids)
+    objects[pages_placeholder_id - 1] = f"<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>".encode("ascii")
+    catalog_id = add_obj(f"<< /Type /Catalog /Pages {pages_placeholder_id} 0 R >>".encode("ascii"))
+
+    out = io.BytesIO()
+    out.write(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = [0]
+    for i, obj in enumerate(objects, start=1):
+        offsets.append(out.tell())
+        out.write(f"{i} 0 obj\n".encode("ascii"))
+        out.write(obj)
+        out.write(b"\nendobj\n")
+
+    xref_pos = out.tell()
+    out.write(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    out.write(b"0000000000 65535 f \n")
+    for off in offsets[1:]:
+        out.write(f"{off:010d} 00000 n \n".encode("ascii"))
+    out.write(
+        f"trailer\n<< /Size {len(objects) + 1} /Root {catalog_id} 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n".encode("ascii")
+    )
+    return out.getvalue()
+
+
+def generate_pdf_bytes(title: str, markdown_text: str, include_disclaimer: bool = True) -> bytes:
+    """
+    Genera un documento PDF en memoria (bytes) listo para descargar en Streamlit.
+    Usa fpdf2 cuando está disponible y un generador PDF 1.4 puro como respaldo automático.
+    """
+    if FPDF is None:
+        return _generate_simple_pdf_bytes(title, markdown_text, include_disclaimer=include_disclaimer)
+
+    safe_title = _sanitize_pdf_text(title or "Documento Legal", allow_euro_cp1252=False)
+    fecha_str = datetime.datetime.now().strftime("%d/%m/%Y")
+
+    class LegalPDF(FPDF):
+        def header(self):
+            self.set_font("Helvetica", "B", 12)
+            self.set_text_color(30, 58, 95)
+            self.cell(0, 7, safe_title[:90], 0, 1, "L")
+            self.set_font("Helvetica", "", 8)
+            self.set_text_color(110, 110, 110)
+            self.cell(0, 5, f"Asesor Legal Inmobiliario  |  Fecha: {fecha_str}", 0, 1, "L")
+            self.set_draw_color(200, 210, 220)
+            self.line(self.l_margin, self.get_y() + 1, self.w - self.r_margin, self.get_y() + 1)
+            self.ln(5)
+
+        def footer(self):
+            self.set_y(-18)
+            self.set_draw_color(220, 220, 220)
+            self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+            self.ln(2)
+            self.set_font("Helvetica", "I", 7)
+            self.set_text_color(120, 120, 120)
+            if include_disclaimer:
+                self.multi_cell(0, 3.5, LEGAL_DISCLAIMER_PDF, 0, "L")
+            self.set_y(-10)
+            self.set_font("Helvetica", "", 8)
+            self.cell(0, 5, f"Pagina {self.page_no()}/{{nb}}", 0, 0, "R")
+
+    try:
+        pdf = LegalPDF(orientation="P", unit="mm", format="A4")
+        pdf.alias_nb_pages()
+        pdf.set_auto_page_break(auto=True, margin=22)
+        pdf.set_margins(18, 16, 18)
+        pdf.add_page()
+
+        for raw_line in (markdown_text or "").splitlines():
+            stripped = raw_line.strip()
+            if not stripped:
+                pdf.ln(3)
+                continue
+            if stripped in ("---", "***", "___"):
+                pdf.ln(2)
+                pdf.set_draw_color(210, 210, 210)
+                pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+                pdf.ln(3)
+                continue
+
+            if stripped.startswith("# "):
+                pdf.ln(2)
+                pdf.set_font("Helvetica", "B", 13)
+                pdf.set_text_color(25, 45, 75)
+                pdf.multi_cell(pdf.epw, 7, _sanitize_pdf_text(stripped[2:]))
+                pdf.ln(1)
+            elif stripped.startswith("## "):
+                pdf.ln(2)
+                pdf.set_font("Helvetica", "B", 11)
+                pdf.set_text_color(35, 60, 95)
+                pdf.multi_cell(pdf.epw, 6.5, _sanitize_pdf_text(stripped[3:]))
+                pdf.ln(1)
+            elif stripped.startswith("### "):
+                pdf.ln(1)
+                pdf.set_font("Helvetica", "B", 10.5)
+                pdf.set_text_color(45, 70, 100)
+                pdf.multi_cell(pdf.epw, 6, _sanitize_pdf_text(stripped[4:]))
+            elif stripped.startswith(("- ", "* ")):
+                pdf.set_font("Helvetica", "", 10)
+                pdf.set_text_color(40, 40, 40)
+                pdf.multi_cell(pdf.epw, 5.5, "  - " + _sanitize_pdf_text(stripped[2:]))
+            else:
+                pdf.set_font("Helvetica", "", 10)
+                pdf.set_text_color(40, 40, 40)
+                pdf.multi_cell(pdf.epw, 5.5, _sanitize_pdf_text(stripped))
+
+        output = pdf.output()
+        return bytes(output) if isinstance(output, (bytes, bytearray)) else output.encode("latin-1")
+    except Exception:
+        return _generate_simple_pdf_bytes(title, markdown_text, include_disclaimer=include_disclaimer)
+
+
+def _extract_generated_documents(text: str) -> tuple:
+    """
+    Extrae bloques [DOCUMENT title="..."]...[/DOCUMENT] de la respuesta del modelo.
+    Devuelve (texto_limpio_para_chat, lista_de_documentos).
+    """
+    documents = []
+    pattern = re.compile(
+        r'\[DOCUMENT(?:\s+title\s*=\s*"([^"]+)")?\s*\](.*?)\[/DOCUMENT\]',
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    def _replace_match(match):
+        raw_title = (match.group(1) or "Documento_Legal").strip()
+        doc_body = (match.group(2) or "").strip()
+        if not doc_body:
+            return ""
+        clean_title = raw_title.replace("_", " ").strip()
+        documents.append({
+            "title": clean_title,
+            "filename": _slugify_filename(raw_title),
+            "content": doc_body,
+        })
+        return f"\n\n---\n### 📄 {clean_title}\n\n{doc_body}\n---\n"
+
+    cleaned_text = pattern.sub(_replace_match, text).strip()
+    return cleaned_text, documents
+
+
 MAX_EPHEMERAL_FILE_BYTES = 15 * 1024 * 1024  # 15 MB máximo en memoria
 
 
@@ -907,9 +1218,16 @@ def get_chat_response(
             except (json.JSONDecodeError, IndexError) as e:
                 print(f"No se pudo parsear los recursos de la respuesta: {e}")
         
-        return {"text": text_part, "recommendations": recommendations}
+        # Extraer documentos descargables [DOCUMENT title="..."]...[/DOCUMENT] si los hay
+        text_part, generated_docs = _extract_generated_documents(text_part)
+
+        return {
+            "text": text_part,
+            "recommendations": recommendations,
+            "documents": generated_docs,
+        }
     except Exception as e:
-        return {"text": f"⚠️ **Error inesperado:** `{e}`", "recommendations": []}
+        return {"text": f"⚠️ **Error inesperado:** `{e}`", "recommendations": [], "documents": []}
 
 @st.cache_data(show_spinner=False, ttl=86400)
 def generate_dynamic_roles(knowledge_context):
