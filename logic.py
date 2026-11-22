@@ -90,7 +90,10 @@ def init_gemini():
         st.error("Falta la API Key de Google. Configúrala en .streamlit/secrets.toml o variables de entorno.")
         return None
     
-    return genai.Client(api_key=api_key)
+    return genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(api_version="v1beta")
+    )
 
 MULTIMEDIA_FILENAMES = {"multimedia.csv", "video_index.json", "recursos.csv", "resources.csv"}
 SUPPORTED_KB_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".pdf")
@@ -589,7 +592,10 @@ def llamar_gemini_con_rotacion_y_reintento(model_name, contents, config=None, ma
         for key in api_keys:
             try:
                 print(f"🔄 GEMINI API: Intentando con API Key terminada en ...{key[-4:]}")
-                client_temp = genai.Client(api_key=key)
+                client_temp = genai.Client(
+                    api_key=key,
+                    http_options=types.HttpOptions(api_version="v1beta")
+                )
                 return client_temp.models.generate_content(
                     model=model_name,
                     contents=contents,
