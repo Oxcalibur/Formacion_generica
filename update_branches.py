@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import subprocess
 
 # --- CONFIGURACIÓN ---
@@ -14,26 +15,30 @@ PROTECTED_PATHS = [
 ]
 SCRIPT_NAME = os.path.basename(__file__)
 
-def run_cmd(cmd, exit_on_error=False):
-    """Ejecuta un comando de shell y devuelve la salida."""
-    try:
-        result = subprocess.run(
-            cmd, 
-            shell=True, 
-            check=True, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE, 
-            text=True,
-            encoding='utf-8',
-            errors='replace'
-        )
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        if exit_on_error:
-            print(f"❌ Error crítico ejecutando '{cmd}': {e.stderr}")
-            sys.exit(1)
-        # Si no es crítico, lanzamos la excepción para que la maneje el llamador
-        raise e
+def run_cmd(cmd, exit_on_error=False, retries=3):
+    """Ejecuta un comando de shell y devuelve la salida. Reintenta si hay bloqueo temporal de index.lock."""
+    for attempt in range(retries):
+        try:
+            result = subprocess.run(
+                cmd, 
+                shell=True, 
+                check=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE, 
+                text=True,
+                encoding='utf-8',
+                errors='replace'
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            if "index.lock" in (e.stderr or "") and attempt < retries - 1:
+                time.sleep(1.0)
+                continue
+            if exit_on_error:
+                print(f"❌ Error crítico ejecutando '{cmd}':\n{e.stderr.strip()}")
+                sys.exit(1)
+            # Si no es crítico, lanzamos la excepción para que la maneje el llamador
+            raise e
 
 def get_branches():
     """Obtiene la lista de ramas locales."""
@@ -47,7 +52,7 @@ def get_branches():
 def path_exists_in_head(path):
     """Verifica si un archivo o carpeta existe en el HEAD actual (rama actual)."""
     result = subprocess.run(
-        f"git rev-parse --verify HEAD:{path}", 
+        f'git rev-parse --verify "HEAD:{path}"', 
         shell=True, 
         stdout=subprocess.PIPE, 
         stderr=subprocess.PIPE
@@ -61,7 +66,7 @@ def resolve_conflicts_in_protected_paths():
     2. Si NO es ruta protegida: Se queda con la versión de main (theirs).
     """
     try:
-        status = run_cmd("git status --porcelain")
+        status = run_cmd("git -c core.quotepath=false status --porcelain")
     except Exception:
         return False
 
@@ -73,26 +78,31 @@ def resolve_conflicts_in_protected_paths():
     
     # Identificar archivos no fusionados (UU, AA, etc.)
     for line in lines:
-        if line[:2] in ['UU', 'AA', 'UD', 'DU', 'DD', 'AU', 'UA']:
-            unmerged_files.append(line[3:].strip())
+        code = line[:2]
+        if code in ['UU', 'AA', 'UD', 'DU', 'DD', 'AU', 'UA']:
+            raw_path = line[3:].strip()
+            if raw_path.startswith('"') and raw_path.endswith('"'):
+                raw_path = raw_path[1:-1]
+            unmerged_files.append((code, raw_path))
 
     if not unmerged_files:
         return True # No se detectaron archivos unmerged estándar
 
     print("   ⚔️  Resolviendo conflictos...")
-    for file_path in unmerged_files:
-        is_protected = False
-        for protected in PROTECTED_PATHS:
-            # Comprobamos si el archivo empieza con la ruta protegida
-            if file_path.startswith(protected):
-                is_protected = True
-                break
+    for code, file_path in unmerged_files:
+        is_protected = any(
+            file_path == protected or file_path.startswith(protected.rstrip("/") + "/")
+            for protected in PROTECTED_PATHS
+        )
         
         if is_protected:
             # Protegido: Mantenemos nuestra versión (Client/Ours)
             try:
-                run_cmd(f"git checkout --ours -- {file_path}")
-                run_cmd(f"git add {file_path}")
+                if code in ['DU', 'DD']:
+                    run_cmd(f'git rm -- "{file_path}"')
+                else:
+                    run_cmd(f'git checkout --ours -- "{file_path}"')
+                    run_cmd(f'git add -- "{file_path}"')
                 print(f"      🛡️ Protegido (Mantiene Local): {file_path}")
             except Exception as e:
                 print(f"   ⚠️ Error restaurando {file_path}: {e}")
@@ -100,8 +110,11 @@ def resolve_conflicts_in_protected_paths():
         else:
             # No protegido: Sobreescribimos con Main (Theirs)
             try:
-                run_cmd(f"git checkout --theirs -- {file_path}")
-                run_cmd(f"git add {file_path}")
+                if code in ['UD', 'DD']:
+                    run_cmd(f'git rm -- "{file_path}"')
+                else:
+                    run_cmd(f'git checkout --theirs -- "{file_path}"')
+                    run_cmd(f'git add -- "{file_path}"')
                 print(f"      ⚡ No protegido (Sobreescribe con Main): {file_path}")
             except Exception as e:
                 print(f"   ⚠️ Error aplicando main en {file_path}: {e}")
@@ -159,7 +172,9 @@ def main():
             shell=True, 
             stdout=subprocess.PIPE, 
             stderr=subprocess.PIPE, 
-            text=True
+            text=True,
+            encoding='utf-8',
+            errors='replace'
         )
         if pull_proc.returncode != 0 and "couldn't find remote ref" not in pull_proc.stderr:
             print(f"   ⚠️ Aviso: Falló el pull previo de '{branch}'. Puede que haya conflictos en la nube:\n      {pull_proc.stderr.strip()}")
@@ -170,12 +185,18 @@ def main():
             shell=True, 
             stdout=subprocess.PIPE, 
             stderr=subprocess.PIPE, 
-            text=True
+            text=True,
+            encoding='utf-8',
+            errors='replace'
         )
         
         if proc.returncode != 0:
             if "Already up to date" in proc.stdout:
                 print(f"   ✅ La rama '{branch}' ya está actualizada.")
+            elif not os.path.exists(os.path.join(".git", "MERGE_HEAD")):
+                error_detail = (proc.stderr or proc.stdout).strip()
+                print(f"   ❌ No se pudo iniciar la fusión de 'main' en '{branch}':\n      {error_detail}")
+                continue
             else:
                 print("   ⚠️ Se detectaron conflictos. Intentando resolver automáticamente...")
                 if not resolve_conflicts_in_protected_paths():
@@ -189,9 +210,9 @@ def main():
         for path in PROTECTED_PATHS:
             if path_exists_in_head(path):
                 try:
-                    run_cmd(f"git checkout HEAD -- {path}")
+                    run_cmd(f'git checkout HEAD -- "{path}"')
                     if os.path.exists(path): 
-                        run_cmd(f"git add {path}")
+                        run_cmd(f'git add -- "{path}"')
                 except Exception: 
                     pass
         
@@ -228,14 +249,22 @@ def main():
                  subprocess.run("git merge --abort", shell=True)
                  
             print(f"   🚀 Asegurando actualización en GitHub...")
-            push_proc = subprocess.run(f"git push origin {branch}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            push_proc = subprocess.run(
+                f"git push origin {branch}",
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding='utf-8',
+                errors='replace'
+            )
             if push_proc.returncode == 0:
                 print(f"   ☁️  Rama '{branch}' comprobada y online.")
             else:
                 print(f"   ⚠️  Aviso: no se pudo sincronizar en remoto:\n      {push_proc.stderr.strip()}")
 
     print("\n" + "-"*30)
-    run_cmd("git checkout main")
+    run_cmd("git checkout main", exit_on_error=True)
     print("✅ Proceso completado.")
 
 if __name__ == "__main__":
