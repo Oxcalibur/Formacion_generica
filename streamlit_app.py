@@ -173,45 +173,6 @@ if mode == get_text("nav_assistant"):
     if not local_resources and st.session_state.get("username") == "admin":
         st.info("💡 **Admin Tip:** Para habilitar recomendaciones de vídeos locales, actualiza `multimedia.csv` y `video_index.json` en la carpeta `knowledge_base`.", icon="ℹ️")
 
-    # Documento temporal del usuario (solo en memoria para esta conversación; nunca se almacena)
-    with st.expander(get_text("doc_uploader_title"), expanded=bool(st.session_state.get("ephemeral_doc"))):
-        st.caption(get_text("doc_privacy_note"))
-        uploaded_file = st.file_uploader(
-            get_text("doc_uploader_label"),
-            type=["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp"],
-            key=f"ephemeral_doc_uploader_{st.session_state.doc_uploader_key}",
-        )
-        if uploaded_file is not None:
-            current_doc = st.session_state.get("ephemeral_doc")
-            file_sig = (uploaded_file.name, uploaded_file.size)
-            if not current_doc or current_doc.get("_sig") != file_sig:
-                parsed_doc = extract_ephemeral_document(uploaded_file)
-                if parsed_doc.get("error"):
-                    st.error(parsed_doc["error"])
-                else:
-                    parsed_doc["_sig"] = file_sig
-                    st.session_state.ephemeral_doc = parsed_doc
-        elif st.session_state.get("ephemeral_doc") is not None:
-            # Si el usuario pulsa la 'X' del uploader, eliminar el documento de memoria al instante
-            st.session_state.ephemeral_doc = None
-
-        active_doc = st.session_state.get("ephemeral_doc")
-        col_doc_info, col_doc_rm, col_new_chat = st.columns([3, 1, 1])
-        with col_doc_info:
-            if active_doc:
-                st.success(get_text("doc_loaded_msg").format(name=active_doc["name"], summary=active_doc["summary"]))
-        with col_doc_rm:
-            if active_doc and st.button(get_text("doc_remove_button"), use_container_width=True):
-                st.session_state.ephemeral_doc = None
-                st.session_state.doc_uploader_key += 1
-                st.rerun()
-        with col_new_chat:
-            if st.button(get_text("doc_new_chat_button"), use_container_width=True):
-                st.session_state.chat_history = []
-                st.session_state.ephemeral_doc = None
-                st.session_state.doc_uploader_key += 1
-                st.rerun()
-
     # Inicializar conversación si está vacía
     if not st.session_state.chat_history:
         current_role = st.session_state.get("user_role", "Propietario particular")
@@ -253,6 +214,50 @@ if mode == get_text("nav_assistant"):
                 st.markdown("--- \n**Recursos recomendados:**")
                 for rec in msg["recommendations"]:
                     st.markdown(f"- **[{rec.get('title', 'Recurso')}]({rec.get('url', '#')})**: {rec.get('reason', 'Recomendado para profundizar en el tema.')}")
+
+    # Panel siempre visible justo encima del chat para adjuntar documento temporal (solo en memoria)
+    with st.container(border=True):
+        col_title, col_new = st.columns([4, 1])
+        with col_title:
+            st.markdown(f"**{get_text('doc_uploader_title')}**")
+            st.caption(get_text("doc_privacy_note"))
+        with col_new:
+            if st.button(get_text("doc_new_chat_button"), use_container_width=True):
+                st.session_state.chat_history = []
+                st.session_state.ephemeral_doc = None
+                st.session_state.doc_uploader_key += 1
+                st.rerun()
+
+        uploaded_file = st.file_uploader(
+            get_text("doc_uploader_label"),
+            type=["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp"],
+            key=f"ephemeral_doc_uploader_{st.session_state.doc_uploader_key}",
+            label_visibility="collapsed",
+        )
+        if uploaded_file is not None:
+            current_doc = st.session_state.get("ephemeral_doc")
+            file_sig = (uploaded_file.name, uploaded_file.size)
+            if not current_doc or current_doc.get("_sig") != file_sig:
+                parsed_doc = extract_ephemeral_document(uploaded_file)
+                if parsed_doc.get("error"):
+                    st.error(parsed_doc["error"])
+                else:
+                    parsed_doc["_sig"] = file_sig
+                    st.session_state.ephemeral_doc = parsed_doc
+        elif st.session_state.get("ephemeral_doc") is not None:
+            # Si el usuario pulsa la 'X' del uploader, eliminar el documento de memoria al instante
+            st.session_state.ephemeral_doc = None
+
+        active_doc = st.session_state.get("ephemeral_doc")
+        if active_doc:
+            col_doc_info, col_doc_rm = st.columns([4, 1])
+            with col_doc_info:
+                st.success(get_text("doc_loaded_msg").format(name=active_doc["name"], summary=active_doc["summary"]))
+            with col_doc_rm:
+                if st.button(get_text("doc_remove_button"), use_container_width=True):
+                    st.session_state.ephemeral_doc = None
+                    st.session_state.doc_uploader_key += 1
+                    st.rerun()
 
     # Input de usuario
     prompt_final = hybrid_chat_input(get_text("assistant_input_placeholder"))
