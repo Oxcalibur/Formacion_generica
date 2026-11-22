@@ -16,12 +16,12 @@ from componentes_ui import hybrid_chat_input
 auth_manager = get_auth_manager()
 
 # --- Configuración de Página ---
-st.set_page_config(page_title=get_text("app_title"), page_icon="🎓")
+st.set_page_config(page_title=get_text("app_title"), page_icon="⚖️")
 apply_custom_styles()
 
 # --- Inicialización de Estado ---
 if "user_role" not in st.session_state:
-    st.session_state.user_role = "Estudiante"
+    st.session_state.user_role = "Propietario particular"
 if "score" not in st.session_state:
     st.session_state.score = 0
 if "active_sessions" not in st.session_state:
@@ -95,7 +95,7 @@ with st.sidebar:
             st.rerun()
 
         with st.expander(get_text("sidebar_role_expander")):
-            current_role = st.session_state.get("user_role", "Estudiante")
+            current_role = st.session_state.get("user_role", "Propietario particular")
             new_role = st.text_input(get_text("sidebar_role_input"), value=current_role)
             if st.button(get_text("sidebar_role_button")):
                 if auth_manager.update_user_job_role(st.session_state.username, new_role):
@@ -165,12 +165,12 @@ if mode == get_text("nav_assistant"):
     if not os.path.isabs(kb_path):
         kb_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), kb_path)
     local_resources = load_multimedia_resources(kb_path)
-    if not local_resources:
-        st.info("💡 **Admin Tip:** Para habilitar recomendaciones de contenido, crea un archivo `multimedia.csv` en la carpeta `knowledge_base` con las columnas: `Title, URL, Type, Description`.", icon="ℹ️")
+    if not local_resources and st.session_state.get("username") == "admin":
+        st.info("💡 **Admin Tip:** Para habilitar recomendaciones de vídeos locales, actualiza `multimedia.csv` y `video_index.json` en la carpeta `knowledge_base`.", icon="ℹ️")
 
     # Inicializar conversación si está vacía
     if not st.session_state.chat_history:
-        current_role = st.session_state.get("user_role", "Estudiante")
+        current_role = st.session_state.get("user_role", "Propietario particular")
         welcome_msg = get_text("assistant_welcome_msg").format(
             client_name=CLIENT_CONFIG['client_name'],
             user_role=current_role
@@ -218,10 +218,10 @@ if mode == get_text("nav_assistant"):
             ).replace(
                 "{multimedia_index_placeholder}", json.dumps(local_resources, ensure_ascii=False) if local_resources else "[]"
             )
-            current_role = st.session_state.get("user_role", "Estudiante")
+            current_role = st.session_state.get("user_role", "Propietario particular")
             role_context = (
-                f"\n\nCONTEXTO DEL USUARIO:\nCargo/Rol actual: {current_role}\n"
-                f"INSTRUCCIÓN: El usuario YA tiene el rol '{current_role}'. NO preguntes por el rol. Ve directo a resolver el reto o tema planteado."
+                f"\n\nCONTEXTO DEL USUARIO:\nPerfil declarado en la plataforma: {current_role}\n"
+                "INSTRUCCIÓN: Respeta estrictamente el Protocolo Interactivo de Triaje (Fase 1) antes de emitir un veredicto definitivo, cálculo o borrador, preguntando solo las variables críticas que falten."
             )
             full_prompt = base_prompt + role_context
             
@@ -230,7 +230,8 @@ if mode == get_text("nav_assistant"):
                 prompt_final, 
                 full_prompt, 
                 knowledge_context=st.session_state.knowledge_base,
-                multimedia_index=local_resources
+                multimedia_index=local_resources,
+                kb_folder=kb_path
             )
             
             text_response = response_data.get("text", "No he podido generar una respuesta.")
@@ -472,18 +473,16 @@ elif mode == get_text("nav_prompts"):
     
     with st.expander("📘 Guía Funcional: Ejemplo de Interpretación"):
         st.markdown("""
-        ### Caso de Uso: Detección de Brechas en Formación de Liderazgo
+        ### Caso de Uso: Detección de Dudas Frecuentes en Arrendamientos Urbanos
         
         **1. La Situación (El Dato):**
-        Lanzas un curso para nuevos managers. En el **Mapa de Inquietudes**, detectas que el bloque más grande es *"Gestión de Conflictos"*, con preguntas específicas sobre *"Cómo dar feedback a ex-compañeros"*.
+        En el **Mapa de Inquietudes**, detectas que el bloque más grande es *"Actualización de Renta y Prórrogas"*, con preguntas recurrentes sobre *"Cómo aplicar el IRAV o el RDL 29/2026 a contratos firmados antes de octubre de 2026"*.
         
         **2. La Interpretación (El Insight):**
-        El sistema te revela que la **teoría** (los manuales) se ha entendido, pero existe una barrera **emocional/práctica** en la ejecución real.
+        El sistema te muestra qué cambios normativos generan mayor fricción práctica en los propietarios particulares.
         
         **3. La Decisión (El Valor):**
-        Gracias al **Plan de Acción** generado por la IA, decides no añadir más teoría, sino crear una **"Hoja de Guiones (Scripts)"** para situaciones tensas.
-        
-        *Resultado: Transformas una formación genérica en una solución quirúrgica para un problema real detectado en días, no meses.*
+        Gracias al **Plan de Acción** generado por la IA, puedes añadir nuevas plantillas validadas en `03_Plantillas_Accionables` o guías prácticas actualizadas en `04_Datos_Volatiles_y_CCAA`.
         """)
     
     worksheet_name = CLIENT_CONFIG.get("prompts_worksheet_name")

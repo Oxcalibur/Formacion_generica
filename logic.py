@@ -12,9 +12,14 @@ try:
 except ImportError:
     GSheetsConnection = None
 try:
-    from herramientas_busqueda import buscar_youtube_externo
+    from herramientas_busqueda import buscar_youtube_externo, requiere_video_post_oct_2026, POST_OCT_2026_PREFIX
 except ImportError:
     buscar_youtube_externo = None
+    requiere_video_post_oct_2026 = None
+    POST_OCT_2026_PREFIX = "2026-11-01"
+import math
+import re
+import unicodedata
 import pandas as pd
 import streamlit as st
 import json
@@ -87,33 +92,355 @@ def init_gemini():
     
     return genai.Client(api_key=api_key)
 
+MULTIMEDIA_FILENAMES = {"multimedia.csv", "video_index.json", "recursos.csv", "resources.csv"}
+SUPPORTED_KB_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".pdf")
+SPANISH_STOPWORDS = {
+    "de", "la", "el", "en", "y", "a", "que", "los", "las", "un", "una", "unos", "unas",
+    "por", "con", "para", "del", "al", "es", "su", "sus", "se", "lo", "como", "mas",
+    "pero", "si", "no", "o", "u", "mi", "mis", "me", "te", "le", "les", "nos", "hay",
+    "son", "ser", "fue", "esta", "este", "esto", "estos", "estas", "ese", "esa", "eso",
+    "sobre", "entre", "sin", "todo", "toda", "todos", "todas", "muy", "ya", "ha", "han",
+    "puede", "puedo", "pueden", "quiero", "tengo", "tiene", "tienen", "hacer", "hola",
+    "gracias", "buenas", "buenos", "dias", "tardes", "favor", "porque", "cuando", "donde",
+    "cual", "cuales", "como", "quien", "quienes", "caso", "tema", "duda", "consulta",
+}
+
+
+def _normalize_search_text(text: str) -> str:
+    """Normaliza texto en español (minúsculas y sin tildes) para búsquedas."""
+    if not text:
+        return ""
+    nfd = unicodedata.normalize("NFD", text.lower())
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+
+def _tokenize_search(text: str) -> List[str]:
+    """Extrae tokens útiles (incluyendo números de artículos/años) descartando stopwords."""
+    norm = _normalize_search_text(text)
+    raw_tokens = re.findall(r"[a-z0-9]+", norm)
+    return [t for t in raw_tokens if len(t) >= 2 and t not in SPANISH_STOPWORDS]
+
+
+def _extract_article_refs(text: str) -> List[str]:
+    """Detecta referencias explícitas a artículos o normas (ej. 'art 11', '29/2026', '1566')."""
+    norm = _normalize_search_text(text)
+    refs = []
+    for match in re.finditer(r"(?:articulo|art\.?)\s*(\d+(?:\.\d+)?)", norm):
+        refs.append(f"articulo {match.group(1)}")
+    for match in re.finditer(r"\b(\d{1,2}/\d{4})\b", norm):
+        refs.append(match.group(1))
+    return refs
+
+
+def _split_document_into_sections(rel_path: str, folder: str, content: str) -> List[Dict[str, Any]]:
+    """Divide un documento Markdown/texto en secciones lógicas (por encabezados/artículos)."""
+    doc_meta = ""
+    body = content
+
+    # Extraer frontmatter YAML si existe
+    fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, flags=re.DOTALL)
+    if fm_match:
+        doc_meta = fm_match.group(1).strip()
+        body = content[fm_match.end():]
+
+    # Dividir por encabezados Markdown (#, ##, ###)
+    heading_pattern = re.compile(r"(?m)^(#{1,3}\s+.+)$")
+    matches = list(heading_pattern.finditer(body))
+
+    raw_sections = []
+    if matches:
+        preamble = body[:matches[0].start()].strip()
+        if preamble:
+            raw_sections.append(("Introducción", preamble))
+        for idx, match in enumerate(matches):
+            heading = match.group(1).strip()
+            start = match.start()
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(body)
+            sec_text = body[start:end].strip()
+            if sec_text:
+                raw_sections.append((heading, sec_text))
+    else:
+        raw_sections.append((os.path.basename(rel_path), body.strip()))
+
+    # Trocear secciones demasiado largas manteniendo límites de párrafo
+    final_sections = []
+    max_chunk_chars = 3500
+    sec_counter = 0
+    for heading, sec_text in raw_sections:
+        if len(sec_text) <= max_chunk_chars:
+            final_sections.append({
+                "rel_path": rel_path,
+                "folder": folder,
+                "heading": heading,
+                "doc_meta": doc_meta,
+                "text": sec_text,
+                "index": sec_counter,
+            })
+            sec_counter += 1
+        else:
+            paragraphs = sec_text.split("\n\n")
+            current_chunk = ""
+            part_num = 1
+            for para in paragraphs:
+                if current_chunk and len(current_chunk) + len(para) + 2 > max_chunk_chars:
+                    final_sections.append({
+                        "rel_path": rel_path,
+                        "folder": folder,
+                        "heading": f"{heading} (parte {part_num})",
+                        "doc_meta": doc_meta,
+                        "text": current_chunk.strip(),
+                        "index": sec_counter,
+                    })
+                    sec_counter += 1
+                    part_num += 1
+                    current_chunk = f"{heading}\n{para}"
+                else:
+                    current_chunk = f"{current_chunk}\n\n{para}" if current_chunk else para
+            if current_chunk.strip():
+                final_sections.append({
+                    "rel_path": rel_path,
+                    "folder": folder,
+                    "heading": f"{heading} (parte {part_num})" if part_num > 1 else heading,
+                    "doc_meta": doc_meta,
+                    "text": current_chunk.strip(),
+                    "index": sec_counter,
+                })
+                sec_counter += 1
+
+    return final_sections
+
+
+@st.cache_data(show_spinner=False)
+def load_knowledge_base_structured(folder_path: str) -> Dict[str, Any]:
+    """
+    Recorre recursivamente todas las subcarpetas de knowledge_base en orden alfabético/prioritario
+    (ej. 01_Normativa_Estatal_Vigente, 02_Jurisprudencia_y_Criterios, 03_Plantillas_Accionables,
+    04_Datos_Volatiles_y_CCAA) y carga documentos + secciones indexadas.
+    """
+    result: Dict[str, Any] = {"folders": {}, "documents": [], "sections": [], "total_chars": 0}
+    if not folder_path or not os.path.exists(folder_path):
+        return result
+
+    for root, dirs, files in os.walk(folder_path):
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d != "__pycache__")
+        files = sorted(f for f in files if not f.startswith("."))
+
+        rel_dir = os.path.relpath(root, folder_path).replace("\\", "/")
+        if rel_dir != "." and rel_dir not in result["folders"]:
+            result["folders"][rel_dir] = []
+
+        for filename in files:
+            if filename.lower() in MULTIMEDIA_FILENAMES:
+                continue
+            if not filename.lower().endswith(SUPPORTED_KB_EXTENSIONS):
+                continue
+
+            file_path = os.path.join(root, filename)
+            rel_path = os.path.relpath(file_path, folder_path).replace("\\", "/")
+            folder_label = rel_dir if rel_dir != "." else "raiz"
+
+            content = ""
+            if filename.lower().endswith(".pdf"):
+                if pypdf:
+                    try:
+                        reader = pypdf.PdfReader(file_path)
+                        content = "\n".join((page.extract_text() or "") for page in reader.pages)
+                    except Exception as e:
+                        st.warning(f"No se pudo leer PDF {rel_path}: {e}")
+                        continue
+                else:
+                    continue
+            else:
+                try:
+                    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                        content = f.read()
+                except Exception as e:
+                    st.warning(f"No se pudo leer {rel_path}: {e}")
+                    continue
+
+            content = content.strip()
+            if not content:
+                continue
+
+            result["folders"].setdefault(folder_label, []).append(rel_path)
+            doc_sections = _split_document_into_sections(rel_path, folder_label, content)
+            result["documents"].append({
+                "rel_path": rel_path,
+                "folder": folder_label,
+                "filename": filename,
+                "content": content,
+                "char_count": len(content),
+            })
+            result["sections"].extend(doc_sections)
+            result["total_chars"] += len(content)
+
+    return result
+
+
 @st.cache_data(show_spinner=False)
 def load_knowledge_base(folder_path):
-    """Lee archivos de texto de la carpeta especificada para crear el contexto."""
-    context_text = ""
-    if not os.path.exists(folder_path):
+    """Lee recursivamente todos los documentos de knowledge_base y sus subcarpetas."""
+    kb_data = load_knowledge_base_structured(folder_path)
+    if not kb_data["documents"]:
         return ""
-        
-    for filename in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, filename)
-        # Filtramos por extensiones de texto comunes
-        if os.path.isfile(file_path):
-            if filename.endswith(('.txt', '.md', '.csv', '.json', '.py')):
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        context_text += f"\n\n--- Documento: {filename} ---\n{f.read()}"
-                except Exception as e:
-                    st.warning(f"No se pudo leer {filename}: {e}")
-            elif filename.endswith('.pdf') and pypdf:
-                try:
-                    reader = pypdf.PdfReader(file_path)
-                    text = ""
-                    for page in reader.pages:
-                        text += page.extract_text() + "\n"
-                    context_text += f"\n\n--- Documento PDF: {filename} ---\n{text}"
-                except Exception as e:
-                    st.warning(f"No se pudo leer PDF {filename}: {e}")
-    return context_text
+
+    parts = []
+    for doc in kb_data["documents"]:
+        parts.append(f"\n\n=== [{doc['folder']}] Documento: {doc['rel_path']} ===\n{doc['content']}")
+    return "".join(parts)
+
+
+def _build_kb_inventory(kb_data: Dict[str, Any]) -> str:
+    """Construye un inventario compacto de carpetas y documentos reales disponibles en knowledge_base."""
+    lines = ["=== INVENTARIO REAL DE DOCUMENTOS EN knowledge_base ==="]
+    for folder, files in sorted(kb_data["folders"].items()):
+        if files:
+            lines.append(f"- {folder}/ ({len(files)} documentos): " + ", ".join(os.path.basename(f) for f in files))
+        else:
+            lines.append(f"- {folder}/: (carpeta actualmente vacía — no inventes documentos ni criterios de esta carpeta)")
+    return "\n".join(lines)
+
+
+def retrieve_relevant_knowledge(
+    folder_path: str,
+    query: str,
+    history: Optional[list] = None,
+    max_chars: int = 90000,
+) -> str:
+    """
+    Recupera contexto documental relevante recorriendo TODAS las carpetas de knowledge_base
+    (01_Normativa_Estatal_Vigente, 02_Jurisprudencia_y_Criterios, 03_Plantillas_Accionables,
+    04_Datos_Volatiles_y_CCAA), evitando truncamientos ciegos.
+    """
+    kb_data = load_knowledge_base_structured(folder_path)
+    if not kb_data["documents"]:
+        return "No hay documentos cargados en knowledge_base."
+
+    inventory = _build_kb_inventory(kb_data)
+
+    # Si toda la base documental cabe holgadamente en el presupuesto, devolverla íntegra
+    if kb_data["total_chars"] <= max_chars:
+        full_docs = "\n\n".join(
+            f"=== [{doc['folder']}] Documento: {doc['rel_path']} ===\n{doc['content']}"
+            for doc in kb_data["documents"]
+        )
+        return f"{inventory}\n\n{full_docs}"
+
+    # Combinar la consulta actual con los últimos mensajes del usuario (triaje + pregunta inicial)
+    user_texts = [query or ""]
+    if history:
+        recent_user_msgs = [m.get("content", "") for m in history[-8:] if m.get("role") == "user"]
+        user_texts.extend(recent_user_msgs[-4:])
+    combined_query = " ".join(user_texts)
+    query_tokens = _tokenize_search(combined_query)
+    query_token_set = set(query_tokens)
+    article_refs = _extract_article_refs(combined_query)
+
+    sections = kb_data["sections"]
+    num_sections = max(1, len(sections))
+
+    # Calcular frecuencia documental por token (IDF simple)
+    doc_freq: Dict[str, int] = {}
+    section_token_sets: List[set] = []
+    section_heading_sets: List[set] = []
+    section_norms: List[str] = []
+
+    for sec in sections:
+        sec_norm = _normalize_search_text(f"{sec['heading']}\n{sec['doc_meta']}\n{sec['text']}")
+        sec_tokens = set(_tokenize_search(sec_norm))
+        head_tokens = set(_tokenize_search(f"{sec['folder']} {sec['rel_path']} {sec['heading']} {sec['doc_meta']}"))
+        section_norms.append(sec_norm)
+        section_token_sets.append(sec_tokens)
+        section_heading_sets.append(head_tokens)
+        for tok in sec_tokens:
+            doc_freq[tok] = doc_freq.get(tok, 0) + 1
+
+    # Documentos compactos clave (<= 12 KB, ej. RDL 29/2026, plantillas cortas, datos volátiles) se incluyen siempre
+    always_include_paths = {doc["rel_path"] for doc in kb_data["documents"] if doc["char_count"] <= 12000}
+
+    scored = []
+    for idx, sec in enumerate(sections):
+        score = 0.0
+        sec_tokens = section_token_sets[idx]
+        head_tokens = section_heading_sets[idx]
+        sec_norm = section_norms[idx]
+
+        for tok in query_token_set:
+            if tok in sec_tokens:
+                idf = math.log((num_sections + 1) / (doc_freq.get(tok, 1) + 1)) + 1.0
+                score += idf
+                if tok in head_tokens:
+                    score += idf * 1.5
+
+        for ref in article_refs:
+            if ref in sec_norm:
+                score += 12.0
+
+        # Pequeña bonificación según prioridad documental definida en Fase 2
+        if sec["folder"].startswith("01_"):
+            score += 0.4
+        elif sec["folder"].startswith("02_"):
+            score += 0.3
+        elif sec["folder"].startswith("03_"):
+            score += 0.25
+        elif sec["folder"].startswith("04_"):
+            score += 0.2
+
+        if sec["rel_path"] in always_include_paths:
+            score += 100.0
+
+        scored.append((score, idx, sec))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    selected_indices = set()
+    used_chars = len(inventory) + 200
+
+    # Garantizar al menos 2 secciones representativas de cada carpeta no vacía
+    populated_folders = [f for f, files in sorted(kb_data["folders"].items()) if files]
+    for folder_name in populated_folders:
+        added_for_folder = 0
+        for score, idx, sec in scored:
+            if sec["folder"] == folder_name and idx not in selected_indices:
+                sec_len = len(sec["text"]) + 120
+                if used_chars + sec_len <= max_chars:
+                    selected_indices.add(idx)
+                    used_chars += sec_len
+                    added_for_folder += 1
+                if added_for_folder >= 2:
+                    break
+
+    # Rellenar el resto del presupuesto con las secciones más relevantes globalmente
+    for score, idx, sec in scored:
+        if idx in selected_indices:
+            continue
+        sec_len = len(sec["text"]) + 120
+        if used_chars + sec_len > max_chars:
+            continue
+        selected_indices.add(idx)
+        used_chars += sec_len
+
+    # Ordenar secciones seleccionadas por carpeta, documento y posición natural
+    selected_sections = [sections[i] for i in sorted(selected_indices)]
+    blocks = [inventory, "\n=== FRAGMENTOS RECUPERADOS DE LA BASE DOCUMENTAL (POR PRIORIDAD Y RELEVANCIA) ==="]
+    for sec in selected_sections:
+        blocks.append(f"\n--- [{sec['folder']}] {sec['rel_path']} | {sec['heading']} ---\n{sec['text']}")
+
+    return "\n".join(blocks)
+
+
+def _sample_knowledge_for_training(folder_path: Optional[str], knowledge_context: str = "", max_chars: int = 24000) -> str:
+    """Obtiene una muestra equilibrada de todos los documentos de knowledge_base para exámenes y temas del Dojo."""
+    if folder_path and os.path.exists(folder_path):
+        kb_data = load_knowledge_base_structured(folder_path)
+        docs = kb_data["documents"]
+        if docs:
+            per_doc = max(2000, max_chars // len(docs))
+            parts = []
+            for doc in docs:
+                parts.append(f"=== [{doc['folder']}] {doc['rel_path']} ===\n{doc['content'][:per_doc]}")
+            return "\n\n".join(parts)[:max_chars]
+    return knowledge_context[:max_chars] if knowledge_context else ""
 
 @st.cache_data(show_spinner=False)
 def load_multimedia_resources(folder_path):
@@ -161,29 +488,33 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
 
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
 
+    kb_folder = CLIENT_CONFIG.get("knowledge_base_folder")
+    if topic and kb_folder and os.path.exists(kb_folder):
+        sampled_context = retrieve_relevant_knowledge(kb_folder, topic, max_chars=24000)
+    else:
+        sampled_context = _sample_knowledge_for_training(kb_folder, knowledge_context, max_chars=24000)
+
     prompt = f"""
-    Actúa como un generador de exámenes experto y dinámico.
-    Tu objetivo es crear un test de evaluación de 5 preguntas adaptado a los contenidos proporcionados.
+    Actúa como un generador de exámenes experto en derecho de arrendamientos urbanos en España para propietarios particulares.
+    Tu objetivo es crear un test de evaluación de 5 preguntas prácticas y exactas basado en la documentación legal proporcionada.
     
     BASE DE CONOCIMIENTO (CONTENIDO FUENTE):
-    {knowledge_context[:15000] if knowledge_context.strip() else "No hay documentos cargados. Usa conocimiento general."}
+    {sampled_context if sampled_context.strip() else "No hay documentos cargados. Usa conocimiento general de la LAU en España."}
     
     CONFIGURACIÓN DEL EXAMEN:
     - Tema sugerido: '{topic}'
     - Dificultad: {difficulty}
-    - Perfil Profesional / Cargo: {role}
+    - Perfil del usuario: {role}
     
     REGLAS DE GENERACIÓN:
-    1. ADAPTACIÓN AL ROL: Las preguntas deben estar diseñadas específicamente para un '{role}'. 
-       - Si es un rol de gestión (Manager, Director), enfócate en estrategia, toma de decisiones y aplicación de conceptos.
-       - Si es un rol técnico/operativo, enfócate en ejecución, detalles y procedimientos.
-    2. PRIORIDAD DE CONTENIDO: Si hay texto en la Base de Conocimiento, las preguntas deben basarse EXCLUSIVAMENTE en esa información. Si el 'Tema sugerido' no está en el texto, ignóralo y pregunta sobre los conceptos clave del documento.
-    3. DINAMISMO: Evita preguntas repetitivas. Varía entre definiciones, casos de uso y análisis según el contenido.
+    1. ENFOQUE PRÁCTICO PARA PROPIETARIOS: Diseña preguntas claras, sin jerga innecesaria, sobre situaciones reales de alquiler en España (contratos, fianzas, subidas de renta, prórrogas, desistimiento, desahucios, comunidad de propietarios, RDL 29/2026).
+    2. PRIORIDAD DE CONTENIDO: Basa las preguntas EXCLUSIVAMENTE en la Base de Conocimiento proporcionada. Nunca inventes artículos, porcentajes ni plazos que no figuren en los documentos.
+    3. DINAMISMO: Varía entre casos prácticos breves, plazos legales y verificación de derechos/obligaciones del propietario.
     4. FORMATO DE SALIDA: Responde ÚNICAMENTE con un JSON válido (lista de objetos).
     
     Ejemplo de estructura JSON requerida:
     [
-        {{"question": "¿Qué es X?", "options": ["A", "B", "C"], "answer": "A"}}
+        {{"question": "¿Qué plazo mínimo de preaviso...?", "options": ["A", "B", "C"], "answer": "A"}}
     ]
     """
     
@@ -281,33 +612,39 @@ def llamar_gemini_con_rotacion_y_reintento(model_name, contents, config=None, ma
     raise last_error or Exception("Cuota agotada en TODAS las API Keys.")
 
 
-def get_chat_response(history: list, user_input: str, system_instruction: str, knowledge_context: str = "", multimedia_index: Optional[list] = None) -> dict:
-    """Obtiene respuesta del chat de Gemini."""
+def get_chat_response(
+    history: list,
+    user_input: str,
+    system_instruction: str,
+    knowledge_context: str = "",
+    multimedia_index: Optional[list] = None,
+    kb_folder: Optional[str] = None,
+) -> dict:
+    """Obtiene respuesta del chat de Gemini usando recuperación multi-carpeta sobre knowledge_base."""
     client = init_gemini()
     if not client:
         return {"text": "Modo demostración: Configura tu API Key para chatear con Gemini real.", "recommendations": []}
     
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
     
-    # Serializar y inyectar el índice multimedia en el prompt del sistema
+    # Serializar e inyectar el índice multimedia en el prompt del sistema
     local_resources_str = json.dumps(multimedia_index, ensure_ascii=False) if multimedia_index else "No hay recursos locales disponibles."
     system_instruction = system_instruction.replace("{multimedia_index_placeholder}", local_resources_str)
 
-    # Instrucciones para activar la búsqueda externa real
+    # Reglas técnicas de búsqueda externa alineadas con la Regla 5 del Asesor Legal Inmobiliario
     external_hint = (
-        "\n\n[MECANISMO DE BÚSQUEDA EXTERNA]\n"
-        "Si el tema EXACTO no está en la biblioteca local, es OBLIGATORIO que uses la búsqueda externa.\n"
-        "1. NO generes enlaces Markdown como `Título`. NO sugieras al usuario que busque por su cuenta.\n"
-        "2. DEBES usar el formato de bloque `[RESOURCES]` con un JSON dentro.\n"
-        "3. El sistema se encargará de la búsqueda real. Tú solo debes generar la instrucción JSON.\n"
-        "   FORMATO CORRECTO: `[RESOURCES]\n[{\"title\": \"Video sobre Storytelling\", \"url\": \"SEARCH_EXTERNAL: storytelling para negocios\", \"reason\": \"...\"}]`\n"
-        "   FORMATO INCORRECTO: `Recursos recomendados: Video sobre Storytelling`"
+        "\n\n[MECANISMO DE BÚSQUEDA EXTERNA DE VÍDEOS — OPCIONAL Y ESTRICTO]\n"
+        "- Nunca inventes URLs ni incluyas vídeos durante la Fase 1 (triaje).\n"
+        "- En la Fase 3, solo si un vídeo explicativo aporta valor claro sobre derecho de arrendamientos urbanos en España, puedes incluir al final el bloque `[RESOURCES]` con un JSON válido.\n"
+        "- Si el tema afecta a subidas de renta, prórrogas, alquiler temporal o alquiler de habitaciones, utiliza `\"url\": \"SEARCH_EXTERNAL_POST_OCT2026: <consulta en español sobre alquiler España>\"` para exigir vídeos publicados después de octubre de 2026.\n"
+        "- Para otros temas de arrendamientos en España (ej. fianza, obras, comunidad), puedes usar `\"url\": \"SEARCH_EXTERNAL: <consulta en español sobre alquiler España>\"`.\n"
+        "- Si no es necesario un vídeo o no existe ninguno actualizado, omite completamente el bloque `[RESOURCES]`."
     )
 
-    # Construir historial estructurado para Gemini (Limitado a las últimas 6 interacciones para ahorrar tokens)
+    # Construir historial estructurado para Gemini (Últimas 12 interacciones para preservar triaje y borradores)
     contents = []
     expected_role = "user"
-    for msg in history[-6:]:
+    for msg in history[-12:]:
         role = "user" if msg["role"] == "user" else "model"
         
         # Regla estricta de Gemini: Debe empezar por 'user' y alternar
@@ -320,8 +657,26 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
             )
             expected_role = "model" if role == "user" else "user"
     
-    contexto_seguro = knowledge_context[:15000] if knowledge_context else "No hay documentos cargados."
-    full_system_instruction = f"{system_instruction}{external_hint}\n\nInformación de Contexto (Base de Conocimiento):\n{contexto_seguro}"
+    resolved_kb_folder = kb_folder or CLIENT_CONFIG.get("knowledge_base_folder")
+    if resolved_kb_folder and os.path.exists(resolved_kb_folder):
+        contexto_seguro = retrieve_relevant_knowledge(
+            resolved_kb_folder,
+            user_input,
+            history=history,
+            max_chars=90000,
+        )
+    else:
+        contexto_seguro = knowledge_context[:90000] if knowledge_context else "No hay documentos cargados."
+
+    full_system_instruction = (
+        f"{system_instruction}{external_hint}\n\n"
+        f"Información de Contexto (Base Documental en knowledge_base):\n{contexto_seguro}"
+    )
+
+    recent_user_context = " ".join(
+        [user_input or ""] + [m.get("content", "") for m in history[-6:] if m.get("role") == "user"]
+    )
+    needs_post_oct_2026 = bool(requiere_video_post_oct_2026 and requiere_video_post_oct_2026(recent_user_context))
     
     try:
         response = llamar_gemini_con_rotacion_y_reintento(
@@ -352,21 +707,46 @@ def get_chat_response(history: list, user_input: str, system_instruction: str, k
                     decoder = json.JSONDecoder()
                     initial_recs, _ = decoder.raw_decode(json_data_str)
                     
-                    # Ahora, procesar y expandir búsquedas externas
+                    # Mapa rápido de recursos locales para validar fecha de publicación si aplica
+                    local_by_url = {
+                        item.get("full_url"): item
+                        for item in (multimedia_index or [])
+                        if isinstance(item, dict) and item.get("full_url")
+                    }
+
+                    # Procesar y expandir búsquedas externas
                     for rec in initial_recs:
                         url = rec.get("url", "")
-                        if isinstance(url, str) and "SEARCH_EXTERNAL:" in url:
-                            query = url.split("SEARCH_EXTERNAL:", 1)[1].strip()
-                            external_results = None
-                            
-                            if buscar_youtube_externo:
-                                external_results = buscar_youtube_externo(query)
-                                
+                        if isinstance(url, str) and "SEARCH_EXTERNAL_POST_OCT2026:" in url:
+                            query = url.split("SEARCH_EXTERNAL_POST_OCT2026:", 1)[1].strip()
+                            external_results = (
+                                buscar_youtube_externo(query, solo_post_oct_2026=True, contexto_consulta=recent_user_context)
+                                if buscar_youtube_externo else None
+                            )
                             if isinstance(external_results, list) and len(external_results) > 0:
                                 recommendations.extend(external_results)
-                            # Si falla o no hay resultados reales, descartamos esta recomendación externa 
-                            # para asegurarnos de que el usuario solo reciba videos que realmente existen.
+                        elif isinstance(url, str) and "SEARCH_EXTERNAL:" in url:
+                            query = url.split("SEARCH_EXTERNAL:", 1)[1].strip()
+                            external_results = (
+                                buscar_youtube_externo(
+                                    query,
+                                    solo_post_oct_2026=(True if needs_post_oct_2026 else None),
+                                    contexto_consulta=recent_user_context,
+                                )
+                                if buscar_youtube_externo else None
+                            )
+                            if isinstance(external_results, list) and len(external_results) > 0:
+                                recommendations.extend(external_results)
                         else:
+                            # Si el tema exige vídeo post-octubre 2026, validar fecha en recursos locales
+                            if needs_post_oct_2026 and url in local_by_url:
+                                fecha_pub = str(
+                                    local_by_url[url].get("fecha_publicacion")
+                                    or local_by_url[url].get("published_at")
+                                    or ""
+                                ).strip()
+                                if not fecha_pub or fecha_pub[:10] < POST_OCT_2026_PREFIX:
+                                    continue
                             recommendations.append(rec)
                 else:
                     pass # No se encontró un array JSON válido
@@ -425,16 +805,21 @@ def generate_dynamic_topics(knowledge_context):
         return default_topics
 
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
+    sampled_context = _sample_knowledge_for_training(
+        CLIENT_CONFIG.get("knowledge_base_folder"),
+        knowledge_context,
+        max_chars=24000,
+    )
     
     prompt = f"""
-    Analiza el siguiente contenido educativo y extrae una lista de 5 a 8 temas principales sobre los que se podría evaluar al usuario.
-    Los temas deben ser breves, descriptivos y cubrir diferentes aspectos del contenido.
+    Analiza la siguiente documentación sobre derecho de arrendamientos urbanos en España y extrae una lista de 5 a 8 temas principales sobre los que se podría evaluar a un propietario particular.
+    Los temas deben ser breves, descriptivos y cubrir diferentes documentos/normas presentes en la base documental (LAU, Ley 12/2023, RDL 29/2026, Código Civil, LEC desahucios, LPH, fianzas, etc.).
     
-    CONTENIDO (Muestra):
-    {knowledge_context[:12000]} 
+    CONTENIDO (Muestra de todos los documentos):
+    {sampled_context} 
     
     Responde ÚNICAMENTE con un JSON válido que sea una lista de strings.
-    Ejemplo: ["Historia", "Conceptos Básicos", "Metodología", "Casos de Uso"]
+    Ejemplo: ["Duración y prórrogas (LAU y RDL 29/2026)", "Actualización de renta e IRAV", "Fianza y liquidación", "Alquiler temporal y habitaciones", "Desahucios por impago (LEC)"]
     """
     
     try:

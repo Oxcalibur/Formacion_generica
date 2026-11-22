@@ -34,13 +34,13 @@ class AuthManager:
                     "score": 0,
                     "active_sessions": 0,
                     "role": "admin" if user == "admin" else "user",
-                    "job_role": "Administrador" if user == "admin" else "Estudiante",
+                    "job_role": "Administrador" if user == "admin" else "Propietario particular",
                     "language": "es" # Idioma por defecto
                 }
                 updated = True
             else:
                 if "job_role" not in data[user]:
-                    data[user]["job_role"] = "Administrador" if user == "admin" else "Estudiante"
+                    data[user]["job_role"] = "Administrador" if user == "admin" else "Propietario particular"
                     updated = True
                 if "language" not in data[user]:
                     data[user]["language"] = "es" # Añadir idioma a usuarios existentes
@@ -120,7 +120,7 @@ class AuthManager:
             
         return input_hash == stored_hash
 
-    def add_user(self, username, password, role="user", job_role="Estudiante"):
+    def add_user(self, username, password, role="user", job_role="Propietario particular"):
         """Añade un nuevo usuario a la base de datos."""
         data = self._load_db()
         if username in data:
@@ -159,7 +159,7 @@ class AuthManager:
         return {
             "score": user.get("score", 0),
             "active_sessions": user.get("active_sessions", 0),
-            "job_role": user.get("job_role", "Estudiante"),
+            "job_role": user.get("job_role", "Propietario particular"),
             "language": user.get("language", "es")
         }
 
