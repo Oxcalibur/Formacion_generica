@@ -626,7 +626,7 @@ def llamar_gemini_con_rotacion_y_reintento(model_name, contents, config=None, ma
 
 
 LEGAL_DISCLAIMER_PDF = (
-    "Orientacion juridica automatizada basada en la normativa espanola vigente. "
+    "Orientación jurídica automatizada basada en la normativa española vigente. "
     "No sustituye el asesoramiento de un abogado colegiado para procedimientos judiciales."
 )
 
@@ -830,28 +830,40 @@ def generate_pdf_bytes(title: str, markdown_text: str, include_disclaimer: bool 
 
     class LegalPDF(FPDF):
         def header(self):
+            self.set_x(self.l_margin)
             self.set_font("Helvetica", "B", 12)
             self.set_text_color(30, 58, 95)
-            self.cell(0, 7, safe_title[:90], 0, 1, "L")
+            self.multi_cell(self.epw, 6.5, safe_title[:110], align="L")
+            self.set_x(self.l_margin)
             self.set_font("Helvetica", "", 8)
             self.set_text_color(110, 110, 110)
-            self.cell(0, 5, f"Asesor Legal Inmobiliario  |  Fecha: {fecha_str}", 0, 1, "L")
+            self.multi_cell(self.epw, 4.5, f"Asesor Legal Inmobiliario  |  Fecha: {fecha_str}", align="L")
             self.set_draw_color(200, 210, 220)
-            self.line(self.l_margin, self.get_y() + 1, self.w - self.r_margin, self.get_y() + 1)
-            self.ln(5)
+            y_line = self.get_y() + 1.5
+            self.line(self.l_margin, y_line, self.w - self.r_margin, y_line)
+            self.set_y(y_line + 4.5)
+            self.set_x(self.l_margin)
 
         def footer(self):
             self.set_y(-18)
             self.set_draw_color(220, 220, 220)
             self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
-            self.ln(2)
+            self.set_y(-16)
+            self.set_x(self.l_margin)
             self.set_font("Helvetica", "I", 7)
             self.set_text_color(120, 120, 120)
             if include_disclaimer:
-                self.multi_cell(0, 3.5, LEGAL_DISCLAIMER_PDF, 0, "L")
-            self.set_y(-10)
+                self.multi_cell(self.epw - 22, 3.5, _sanitize_pdf_text(LEGAL_DISCLAIMER_PDF), align="L")
+            self.set_y(-11)
+            self.set_x(self.l_margin)
             self.set_font("Helvetica", "", 8)
-            self.cell(0, 5, f"Pagina {self.page_no()}/{{nb}}", 0, 0, "R")
+            self.cell(self.epw, 5, f"Página {self.page_no()}/{{nb}}", 0, 0, "R")
+
+    def _write_block(pdf_obj, text_val: str, line_h: float = 5.5, indent: float = 0.0, align: str = "L"):
+        """Escribe un bloque de texto forzando siempre el cursor al margen izquierdo (evita desbordamiento en fpdf2)."""
+        pdf_obj.set_x(pdf_obj.l_margin + indent)
+        pdf_obj.multi_cell(pdf_obj.epw - indent, line_h, text_val, align=align)
+        pdf_obj.set_x(pdf_obj.l_margin)
 
     try:
         pdf = LegalPDF(orientation="P", unit="mm", format="A4")
@@ -862,41 +874,63 @@ def generate_pdf_bytes(title: str, markdown_text: str, include_disclaimer: bool 
 
         for raw_line in (markdown_text or "").splitlines():
             stripped = raw_line.strip()
+            pdf.set_x(pdf.l_margin)
+
             if not stripped:
                 pdf.ln(3)
                 continue
+
             if stripped in ("---", "***", "___"):
                 pdf.ln(2)
                 pdf.set_draw_color(210, 210, 210)
-                pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
-                pdf.ln(3)
+                y_hr = pdf.get_y()
+                pdf.line(pdf.l_margin, y_hr, pdf.w - pdf.r_margin, y_hr)
+                pdf.set_y(y_hr + 3)
+                pdf.set_x(pdf.l_margin)
                 continue
+
+            # Detectar línea completa en negrita (**TÍTULO** o **PRIMERA. OBJETO.**)
+            is_full_bold = (
+                stripped.startswith("**")
+                and stripped.endswith("**")
+                and stripped.count("**") == 2
+                and len(stripped) > 4
+            )
 
             if stripped.startswith("# "):
                 pdf.ln(2)
                 pdf.set_font("Helvetica", "B", 13)
                 pdf.set_text_color(25, 45, 75)
-                pdf.multi_cell(pdf.epw, 7, _sanitize_pdf_text(stripped[2:]))
-                pdf.ln(1)
+                _write_block(pdf, _sanitize_pdf_text(stripped[2:]), line_h=7)
+                pdf.ln(1.5)
             elif stripped.startswith("## "):
-                pdf.ln(2)
+                pdf.ln(2.5)
                 pdf.set_font("Helvetica", "B", 11)
-                pdf.set_text_color(35, 60, 95)
-                pdf.multi_cell(pdf.epw, 6.5, _sanitize_pdf_text(stripped[3:]))
+                pdf.set_text_color(30, 58, 95)
+                _write_block(pdf, _sanitize_pdf_text(stripped[3:]), line_h=6.5)
                 pdf.ln(1)
             elif stripped.startswith("### "):
-                pdf.ln(1)
+                pdf.ln(2)
                 pdf.set_font("Helvetica", "B", 10.5)
-                pdf.set_text_color(45, 70, 100)
-                pdf.multi_cell(pdf.epw, 6, _sanitize_pdf_text(stripped[4:]))
+                pdf.set_text_color(40, 65, 100)
+                _write_block(pdf, _sanitize_pdf_text(stripped[4:]), line_h=6)
+                pdf.ln(0.5)
+            elif is_full_bold:
+                pdf.ln(2)
+                pdf.set_font("Helvetica", "B", 10.5)
+                pdf.set_text_color(30, 50, 80)
+                _write_block(pdf, _sanitize_pdf_text(stripped[2:-2]), line_h=6)
+                pdf.ln(0.5)
             elif stripped.startswith(("- ", "* ")):
                 pdf.set_font("Helvetica", "", 10)
                 pdf.set_text_color(40, 40, 40)
-                pdf.multi_cell(pdf.epw, 5.5, "  - " + _sanitize_pdf_text(stripped[2:]))
+                _write_block(pdf, "- " + _sanitize_pdf_text(stripped[2:]), line_h=5.5, indent=4.0)
+                pdf.ln(0.8)
             else:
                 pdf.set_font("Helvetica", "", 10)
                 pdf.set_text_color(40, 40, 40)
-                pdf.multi_cell(pdf.epw, 5.5, _sanitize_pdf_text(stripped))
+                _write_block(pdf, _sanitize_pdf_text(stripped), line_h=5.5)
+                pdf.ln(1.2)
 
         output = pdf.output()
         return bytes(output) if isinstance(output, (bytes, bytearray)) else output.encode("latin-1")
