@@ -190,11 +190,11 @@ if mode == get_text("nav_assistant"):
     # Input de usuario
     prompt_final = hybrid_chat_input(get_text("assistant_input_placeholder"))
     if prompt_final:
-        # Registrar prompt de forma anónima si está habilitado
-        if CLIENT_CONFIG.get("log_prompts", False):
-            worksheet = CLIENT_CONFIG.get("prompts_worksheet_name")
-            if worksheet:
-                log_user_prompt(prompt_final, worksheet, st.session_state.user_role)
+        # Registrar prompt de forma anónima si está habilitado (desactivado en esta versión)
+        # if CLIENT_CONFIG.get("log_prompts", False):
+        #     worksheet = CLIENT_CONFIG.get("prompts_worksheet_name")
+        #     if worksheet:
+        #         log_user_prompt(prompt_final, worksheet, st.session_state.user_role)
 
         # Registrar interacción si es la primera de la sesión
         if st.session_state.get("logged_in") and not st.session_state.session_interaction_recorded:
