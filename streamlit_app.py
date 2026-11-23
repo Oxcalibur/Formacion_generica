@@ -10,7 +10,7 @@ from logic import (
     calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, 
     graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts, analyze_prompt_patterns, graficar_patrones_prompts, 
     calculate_historical_improvement_rate, load_multimedia_resources, extract_ephemeral_document, generate_pdf_bytes,
-    get_default_session_profile
+    get_default_session_profile, aplicar_motor_a_perfil
 )
 from auth import get_auth_manager
 from componentes_ui import hybrid_chat_input
@@ -155,8 +155,13 @@ with st.sidebar:
         )
         qp_viviendas = st.selectbox(
             "Viviendas residenciales en toda España (incl. habitual)",
-            ["Sin definir", "1 a 4 (y <=1.500 m2)", "5 a 10 (y <=1.500 m2)", "11 o más (o >1.500 m2)"],
+            ["Sin definir", "1 a 4", "5 a 10", "11 o más"],
             key=f"qp_viv_{st.session_state.chat_session_id}",
+        )
+        qp_m2 = st.selectbox(
+            "Superficie construida residencial total en España (sin garajes/trasteros/locales)",
+            ["Sin definir", "Hasta 1.500 m²", "Más de 1.500 m²"],
+            key=f"qp_m2_{st.session_state.chat_session_id}",
         )
         qp_ccaa = st.selectbox(
             "CCAA del inmueble",
@@ -174,7 +179,7 @@ with st.sidebar:
             key=f"qp_res_{st.session_state.chat_session_id}",
         )
 
-        # Sincronizar selecciones explícitas en la memoria de sesión (solo si el usuario eligió algo)
+        # Sincronizar selecciones explícitas en los campos atómicos y recalcular con el motor determinista
         mem = st.session_state.user_profile_memory
         tit_map = {
             "Persona física": "persona_fisica",
@@ -189,22 +194,23 @@ with st.sidebar:
             mem["no_residente"] = False
         elif qp_residente == "No residente (extranjero)":
             mem["no_residente"] = True
-        if qp_viviendas == "11 o más (o >1.500 m2)":
-            mem["gran_tenedor"] = True
-        elif qp_viviendas == "1 a 4 (y <=1.500 m2)":
-            mem["gran_tenedor"] = False
+        if qp_viviendas == "1 a 4" and mem.get("viviendas_total_espana") is None:
+            mem["viviendas_total_espana"] = 2
+        elif qp_viviendas == "5 a 10" and mem.get("viviendas_total_espana") is None:
+            mem["viviendas_total_espana"] = 5
+        elif qp_viviendas == "11 o más":
+            mem["viviendas_total_espana"] = 11
+        if qp_m2 == "Hasta 1.500 m²":
+            mem["supera_1500_m2"] = False
+        elif qp_m2 == "Más de 1.500 m²":
+            mem["supera_1500_m2"] = True
 
-        # Inferir arquetipo inicial solo cuando los datos seleccionados son inequívocos
-        if not mem.get("arquetipo_detectado"):
-            if mem.get("no_residente") is True:
-                mem["arquetipo_detectado"] = "inversor_no_residente"
-            elif mem.get("titularidad") == "persona_juridica":
-                mem["arquetipo_detectado"] = "sociedad_inmobiliaria"
-            elif mem.get("titularidad") == "persona_fisica" and mem.get("gran_tenedor") is True:
-                mem["arquetipo_detectado"] = "gran_tenedor_particular"
+        mem_eval, motor_info = aplicar_motor_a_perfil(mem)
+        st.session_state.user_profile_memory = mem_eval
 
     # Memoria de perfil detectado en la conversación actual (visible solo cuando tiene datos confirmados)
-    mem_profile = st.session_state.get("user_profile_memory", {})
+    mem_profile, motor_info = aplicar_motor_a_perfil(st.session_state.get("user_profile_memory", {}))
+    st.session_state.user_profile_memory = mem_profile
     filled_profile = {
         k: v for k, v in mem_profile.items()
         if v is not None and v != [] and v != ""
@@ -212,9 +218,14 @@ with st.sidebar:
     if filled_profile:
         with st.expander(get_text("sidebar_profile_memory_expander"), expanded=True):
             labels_map = {
-                "arquetipo_detectado": "Arquetipo",
+                "arquetipo_detectado": "Arquetipo (validado)",
                 "titularidad": "Titularidad",
-                "gran_tenedor": "Gran tenedor",
+                "gran_tenedor": "Gran tenedor (Ley 12/2023)",
+                "viviendas_total_espana": "Viviendas en España",
+                "viviendas_en_zona_tensionada": "Viviendas en zona tensionada",
+                "superficie_residencial_m2": "Superficie residencial (m²)",
+                "supera_1500_m2": "Supera 1.500 m²",
+                "tiene_copropiedad": "Copropiedad / proindiviso",
                 "residencia_fiscal_ccaa": "Residencia fiscal",
                 "ubicacion_inmueble_ccaa": "CCAA inmueble",
                 "municipio_inmueble": "Municipio",
@@ -229,6 +240,8 @@ with st.sidebar:
                     if isinstance(val, bool):
                         val = "Sí" if val else "No"
                     st.markdown(f"- **{label}:** `{val}`")
+            if motor_info.get("gran_tenedor") is None:
+                st.caption("⏳ Gran tenedor / arquetipo: pendiente de validar todos los umbrales legales (viviendas y 1.500 m²).")
             if filled_profile.get("hechos_clave"):
                 st.markdown("**Hechos confirmados:**")
                 for h in filled_profile["hechos_clave"][-5:]:

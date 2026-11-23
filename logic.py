@@ -37,7 +37,7 @@ try:
     import plotly.graph_objects as go
 except ImportError:
     go = None
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import datetime
 from config import CLIENT_CONFIG
 
@@ -1099,18 +1099,27 @@ def extract_ephemeral_document(uploaded_file) -> Dict[str, Any]:
 DEFAULT_SESSION_PROFILE: Dict[str, Any] = {
     "arquetipo_detectado": None,
     "titularidad": None,
-    "gran_tenedor": None,
+    "no_residente": None,
     "residencia_fiscal_ccaa": None,
     "ubicacion_inmueble_ccaa": None,
     "municipio_inmueble": None,
     "zona_tensionada": None,
+    "viviendas_total_espana": None,
+    "viviendas_en_zona_tensionada": None,
+    "superficie_residencial_m2": None,
+    "supera_1500_m2": None,
+    "tiene_copropiedad": None,
+    "objetivo_inversor": None,
+    "gran_tenedor": None,
     "modalidad_alquiler": None,
-    "no_residente": None,
     "fecha_inicio_contrato": None,
     "hechos_clave": [],
 }
 
 ALLOWED_PROFILE_KEYS = set(DEFAULT_SESSION_PROFILE.keys())
+# Campos calculados exclusivamente por el motor determinista (el LLM no puede forzarlos sin datos atómicos)
+ENGINE_DERIVED_KEYS = {"gran_tenedor", "arquetipo_detectado"}
+CCAA_UMBRAL_5_ZONA_TENSIONADA = {"cataluna", "pais vasco", "navarra"}
 
 
 def get_default_session_profile() -> Dict[str, Any]:
@@ -1119,6 +1128,173 @@ def get_default_session_profile() -> Dict[str, Any]:
         k: (list(v) if isinstance(v, list) else v)
         for k, v in DEFAULT_SESSION_PROFILE.items()
     }
+
+
+def _to_optional_int(val: Any) -> Optional[int]:
+    if val is None or isinstance(val, bool):
+        return None
+    try:
+        num = int(float(str(val).replace(".", "").replace(",", ".").strip()))
+        return num if num >= 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _to_optional_float(val: Any) -> Optional[float]:
+    if val is None or isinstance(val, bool):
+        return None
+    try:
+        s = str(val).strip().lower().replace("m2", "").replace("m²", "").strip()
+        # Manejar formato español "1.500" o "1.500,5"
+        if "." in s and "," in s:
+            s = s.replace(".", "").replace(",", ".")
+        elif "." in s and len(s.split(".")[-1]) == 3:
+            s = s.replace(".", "")
+        else:
+            s = s.replace(",", ".")
+        num = float(s)
+        return num if num >= 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def evaluar_calificacion_legal(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Motor determinista de calificación legal (Art. 3.k Ley 12/2023 + 5 arquetipos).
+    Calcula SIEMPRE con precisión matemática:
+      - gran_tenedor: True | False | None (nunca False sin confirmar todos los umbrales aplicables)
+      - arquetipo_detectado: calculado estrictamente desde hechos confirmados
+      - datos_faltantes_gran_tenedor: lista exacta de datos pendientes para poder calificar
+      - datos_faltantes_arquetipo: lista exacta de datos pendientes para cerrar arquetipo
+      - avisos_legales: alertas obligatorias (ej. copropiedad/proindiviso, umbral autonómico)
+    """
+    titularidad = profile.get("titularidad")
+    no_residente = profile.get("no_residente")
+    zona_tensionada = profile.get("zona_tensionada")
+    ccaa_inmueble_norm = _normalize_search_text(str(profile.get("ubicacion_inmueble_ccaa") or ""))
+    viv_total = _to_optional_int(profile.get("viviendas_total_espana"))
+    viv_zt = _to_optional_int(profile.get("viviendas_en_zona_tensionada"))
+    sup_m2 = _to_optional_float(profile.get("superficie_residencial_m2"))
+    supera_1500 = profile.get("supera_1500_m2")
+    tiene_copropiedad = profile.get("tiene_copropiedad")
+    objetivo_inversor = profile.get("objetivo_inversor")
+
+    # Sincronizar supera_1500_m2 si tenemos m2 numéricos exactos
+    if sup_m2 is not None:
+        supera_1500 = sup_m2 > 1500.0
+
+    # --- 1. Evaluación determinista de GRAN TENEDOR (Art. 3.k Ley 12/2023) ---
+    es_gt: Optional[bool] = None
+    motivos_gt: List[str] = []
+    faltan_gt: List[str] = []
+    avisos: List[str] = []
+
+    # Cualquier criterio positivo basta para confirmar Gran Tenedor = True
+    if viv_total is not None and viv_total > 10:
+        es_gt = True
+        motivos_gt.append(f"Titular de {viv_total} viviendas residenciales en España (>10 inmuebles, Art. 3.k Ley 12/2023).")
+    if supera_1500 is True:
+        es_gt = True
+        detalle_m2 = f" ({sup_m2:g} m²)" if sup_m2 is not None else ""
+        motivos_gt.append(f"Superficie construida residencial superior a 1.500 m² en España{detalle_m2} (Art. 3.k Ley 12/2023).")
+    if zona_tensionada is True and viv_zt is not None and viv_zt >= 5:
+        es_gt = True
+        motivos_gt.append(f"Titular de {viv_zt} viviendas residenciales en la misma zona tensionada (umbral autonómico >=5).")
+
+    # Si aún no es True, comprobar si están TODOS los umbrales confirmados para poder descartar (False)
+    if es_gt is None:
+        if viv_total is None:
+            faltan_gt.append(
+                "Número total de inmuebles urbanos de uso residencial en TODA España "
+                "(incluyendo vivienda habitual, alquiler tradicional, viviendas turísticas y pisos por habitaciones; "
+                "excluyendo garajes, trasteros y locales)"
+            )
+        if supera_1500 is None:
+            faltan_gt.append(
+                "Confirmar si la superficie construida total de uso residencial en toda España supera los 1.500 m² "
+                "(excluyendo garajes, trasteros y locales)"
+            )
+        if zona_tensionada is True:
+            # Si ya sabemos que tiene <5 viviendas en TODA España, es matemáticamente imposible tener >=5 en zona tensionada
+            if viv_zt is None and (viv_total is None or viv_total >= 5):
+                faltan_gt.append(
+                    "Número de viviendas residenciales situadas dentro de esa misma zona tensionada (umbral autonómico de 5)"
+                )
+
+        if not faltan_gt:
+            es_gt = False
+            motivos_gt.append(
+                f"Confirmado No Gran Tenedor (Pequeño Tenedor): {viv_total} viviendas residenciales en España (<=10), "
+                "<=1.500 m² construidos residenciales y por debajo del umbral de zona tensionada."
+            )
+
+    if tiene_copropiedad is True:
+        avisos.append(
+            "COPROPIEDAD/PROINDIVISO DETECTADO: para los 1.500 m² computa la superficie proporcional a su cuota; "
+            "para el número de inmuebles existe litigiosidad y disparidad de criterios entre Audiencias Provinciales y CCAA."
+        )
+    if zona_tensionada is True and ccaa_inmueble_norm and ccaa_inmueble_norm not in CCAA_UMBRAL_5_ZONA_TENSIONADA:
+        avisos.append(
+            "Verificar en la resolución autonómica de la zona tensionada si la CCAA rebajó el umbral de gran tenedor a 5 viviendas."
+        )
+
+    # --- 2. Evaluación determinista de ARQUETIPO ---
+    arquetipo: Optional[str] = None
+    faltan_arquetipo: List[str] = []
+
+    if no_residente is True:
+        arquetipo = "inversor_no_residente"
+    elif titularidad == "persona_juridica":
+        arquetipo = "sociedad_inmobiliaria"
+    elif titularidad == "persona_fisica":
+        if no_residente is None:
+            faltan_arquetipo.append("Confirmar si es residente fiscal en España o no residente (extranjero)")
+        if es_gt is None:
+            faltan_arquetipo.extend(faltan_gt)
+        elif no_residente is False:
+            if es_gt is True:
+                arquetipo = "gran_tenedor_particular"
+            else:
+                # Pequeño tenedor persona física residente en España
+                if objetivo_inversor is True:
+                    arquetipo = "inversor_crecimiento"
+                elif viv_total is not None and viv_total <= 2:
+                    arquetipo = "propietario_particular"
+                else:
+                    arquetipo = "inversor_crecimiento"
+    else:
+        faltan_arquetipo.append("Confirmar titularidad (persona física, sociedad/SL o comunidad de bienes)")
+        if no_residente is None:
+            faltan_arquetipo.append("Confirmar si es residente fiscal en España o no residente")
+
+    return {
+        "gran_tenedor": es_gt,
+        "arquetipo_detectado": arquetipo,
+        "supera_1500_m2": supera_1500,
+        "motivos_gran_tenedor": motivos_gt,
+        "datos_faltantes_gran_tenedor": faltan_gt,
+        "datos_faltantes_arquetipo": faltan_arquetipo,
+        "avisos_legales": avisos,
+    }
+
+
+def aplicar_motor_a_perfil(profile: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Normaliza tipos numéricos en el perfil, ejecuta el motor determinista y sincroniza los campos derivados."""
+    clean = get_default_session_profile()
+    if isinstance(profile, dict):
+        for k in ALLOWED_PROFILE_KEYS:
+            if k in profile and profile[k] is not None:
+                clean[k] = list(profile[k]) if isinstance(profile[k], list) else profile[k]
+
+    clean["viviendas_total_espana"] = _to_optional_int(clean.get("viviendas_total_espana"))
+    clean["viviendas_en_zona_tensionada"] = _to_optional_int(clean.get("viviendas_en_zona_tensionada"))
+    clean["superficie_residencial_m2"] = _to_optional_float(clean.get("superficie_residencial_m2"))
+
+    eval_result = evaluar_calificacion_legal(clean)
+    clean["gran_tenedor"] = eval_result["gran_tenedor"]
+    clean["arquetipo_detectado"] = eval_result["arquetipo_detectado"]
+    clean["supera_1500_m2"] = eval_result["supera_1500_m2"]
+    return clean, eval_result
 
 
 def _extract_explicit_facts_from_user_text(user_text: str, profile: Dict[str, Any]) -> Dict[str, Any]:
@@ -1219,23 +1395,49 @@ def _extract_explicit_facts_from_user_text(user_text: str, profile: Dict[str, An
     elif "comunidad de bienes" in norm:
         updated["titularidad"] = "comunidad_bienes"
 
-    # 4. Arquetipo inicial SOLO cuando es 100 % inequívoco sin asumir tamaño de cartera
-    #    (nunca asumir 'inversor_crecimiento' ni 'propietario_particular' sin conocer nº de viviendas)
-    if not updated.get("arquetipo_detectado"):
-        if updated.get("no_residente") is True:
-            updated["arquetipo_detectado"] = "inversor_no_residente"
-        elif updated.get("titularidad") == "persona_juridica":
-            updated["arquetipo_detectado"] = "sociedad_inmobiliaria"
-        elif updated.get("gran_tenedor") is True and updated.get("titularidad") == "persona_fisica":
-            updated["arquetipo_detectado"] = "gran_tenedor_particular"
+    # 4. Datos atómicos de cartera, m² y copropiedad (SOLO si el usuario los declara explícitamente)
+    if any(p in norm for p in ("invertir", "inversion", "prestamo personal", "roce", "rentabilidad", "otro piso", "segundo piso", "comprar un piso", "comprar vivienda")):
+        updated["objetivo_inversor"] = True
 
+    if any(p in norm for p in ("proindiviso", "copropiedad", "heredado con", "herencia con", "al 50%", "al 50 %", "con mi hermano", "con mis hermanos", "a medias con")):
+        updated["tiene_copropiedad"] = True
+
+    # Superficie explícita en m² o confirmación explícita sobre 1.500 m²
+    if re.search(r"no\s+(?:supero|llego|alcanzo|paso).{0,20}1\.?500\s*m", norm) or re.search(r"menos\s+de\s+1\.?500\s*m", norm):
+        updated["supera_1500_m2"] = False
+    elif re.search(r"(?:supero|mas\s+de|paso\s+de|encima\s+de)\s+1\.?500\s*m", norm):
+        updated["supera_1500_m2"] = True
+    else:
+        m2_match = re.search(r"(?:total(?:es)?|suma(?:n)?|tengo|superficie).{0,25}\b(\d{1,2}\.?\d{3}|\d{3,4})\s*m(?:2|²|etros)\b", norm)
+        if m2_match:
+            parsed_m2 = _to_optional_float(m2_match.group(1))
+            if parsed_m2 is not None:
+                updated["superficie_residencial_m2"] = parsed_m2
+
+    # Número explícito total de viviendas en toda España (solo si queda claro que es el total)
+    viv_total_match = re.search(
+        r"(?:en\s+total|en\s+toda\s+espana|en\s+espana).{0,25}\b(\d{1,3})\s*(?:viviendas?|pisos?|inmuebles?)\b"
+        r"|\b(\d{1,3})\s*(?:viviendas?|pisos?|inmuebles?)\s*(?:residenciales\s*)?(?:en\s+total|en\s+toda\s+espana|en\s+espana)\b"
+        r"|(?:solo\s+tengo|unicamente\s+tengo)\s+(?:esta|una|1)\s+(?:vivienda|piso)\b",
+        norm,
+    )
+    if viv_total_match:
+        num_str = viv_total_match.group(1) or viv_total_match.group(2)
+        if num_str:
+            updated["viviendas_total_espana"] = _to_optional_int(num_str)
+        elif "solo tengo" in viv_total_match.group(0) or "unicamente tengo" in viv_total_match.group(0):
+            updated["viviendas_total_espana"] = 1
+
+    # Recalcular siempre gran_tenedor y arquetipo_detectado de forma 100 % determinista
+    updated, _ = aplicar_motor_a_perfil(updated)
     return updated
 
 
 def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str, Any]] = None) -> tuple:
     """
     Extrae el bloque oculto [PROFILE_UPDATE] {...} de la respuesta del modelo,
-    lo elimina del texto visible y fusiona los campos confirmados en la memoria de sesión.
+    lo elimina del texto visible, fusiona los campos atómicos confirmados y
+    recalcula SIEMPRE `gran_tenedor` y `arquetipo_detectado` mediante el motor determinista.
     """
     merged = get_default_session_profile()
     if isinstance(current_profile, dict):
@@ -1244,6 +1446,7 @@ def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str
                 merged[k] = list(current_profile[k]) if isinstance(current_profile[k], list) else current_profile[k]
 
     if not raw_text or "[PROFILE_UPDATE]" not in raw_text:
+        merged, _ = aplicar_motor_a_perfil(merged)
         return raw_text, merged
 
     idx = raw_text.find("[PROFILE_UPDATE]")
@@ -1252,7 +1455,6 @@ def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str
 
     # Limpiar posible bloque markdown ```json ... ``` inmediatamente después de la etiqueta
     after_stripped = after.lstrip()
-    fence_end_offset = 0
     parse_src = after_stripped
     if after_stripped.startswith("```"):
         newline_pos = after_stripped.find("\n")
@@ -1267,6 +1469,9 @@ def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str
             if isinstance(update_obj, dict):
                 for k, v in update_obj.items():
                     if k not in ALLOWED_PROFILE_KEYS or v is None:
+                        continue
+                    # Los campos derivados los calcula EXCLUSIVAMENTE el motor determinista
+                    if k in ENGINE_DERIVED_KEYS:
                         continue
                     if k == "hechos_clave":
                         if isinstance(v, list):
@@ -1286,11 +1491,13 @@ def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str
             if remainder.startswith("```"):
                 remainder = remainder[3:].lstrip()
             cleaned_text = f"{before.rstrip()}\n\n{remainder}".strip() if remainder else before.strip()
+            merged, _ = aplicar_motor_a_perfil(merged)
             return cleaned_text, merged
         except Exception as e:
             print(f"No se pudo parsear [PROFILE_UPDATE]: {e}")
 
     # Si no había JSON válido, eliminar igualmente la etiqueta residual para no ensuciar el chat
+    merged, _ = aplicar_motor_a_perfil(merged)
     return before.strip(), merged
 
 
@@ -1305,11 +1512,10 @@ def get_chat_response(
     session_profile: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Obtiene respuesta del chat de Gemini con memoria de perfil, coherencia multi-turno y recuperación multi-carpeta."""
-    current_profile = get_default_session_profile()
-    if isinstance(session_profile, dict):
-        for k in ALLOWED_PROFILE_KEYS:
-            if k in session_profile and session_profile[k] is not None:
-                current_profile[k] = list(session_profile[k]) if isinstance(session_profile[k], list) else session_profile[k]
+    current_profile, _ = aplicar_motor_a_perfil(session_profile or {})
+    # Incorporar hechos explícitos del mensaje actual ANTES de evaluar el motor para este turno
+    current_profile = _extract_explicit_facts_from_user_text(user_input, current_profile)
+    current_profile, motor_eval = aplicar_motor_a_perfil(current_profile)
 
     client = init_gemini()
     if not client:
@@ -1322,9 +1528,10 @@ def get_chat_response(
     
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
     
-    # Serializar e inyectar el índice multimedia y la memoria de perfil de sesión en el prompt del sistema
+    # Serializar e inyectar el índice multimedia, la memoria de perfil y el dictamen del motor legal
     local_resources_str = json.dumps(multimedia_index, ensure_ascii=False) if multimedia_index else "No hay recursos locales disponibles."
     profile_json_str = json.dumps(current_profile, ensure_ascii=False, indent=2)
+    motor_json_str = json.dumps(motor_eval, ensure_ascii=False, indent=2)
     system_instruction = (
         system_instruction
         .replace("{multimedia_index_placeholder}", local_resources_str)
@@ -1332,6 +1539,19 @@ def get_chat_response(
     )
     if "<memoria_perfil_sesion>" not in system_instruction:
         system_instruction += f"\n\n<memoria_perfil_sesion>\n{profile_json_str}\n</memoria_perfil_sesion>"
+
+    motor_block = (
+        "\n\n<estado_motor_calificacion_legal>\n"
+        f"{motor_json_str}\n"
+        "</estado_motor_calificacion_legal>\n"
+        "REGLA VINCULANTE DEL MOTOR DE CALIFICACIÓN LEGAL:\n"
+        "1. NUNCA contradigas el dictamen del motor (`gran_tenedor` y `arquetipo_detectado`).\n"
+        "2. Si `gran_tenedor` es `null` y el tema requiere saberlo (zona tensionada, desahucio, vulnerabilidad o calificar el perfil patrimonial del usuario), "
+        "DEBES preguntar los elementos exactos listados en `datos_faltantes_gran_tenedor` (incluyendo los 1.500 m² construidos residenciales y el total de viviendas en TODA España) "
+        "y NUNCA afirmar que es o no es gran tenedor hasta que el motor lo confirme.\n"
+        "3. Si `arquetipo_detectado` es `null`, NO inventes ni escribas un arquetipo en el 'Resumen de tu caso' (indica simplemente los datos confirmados y qué falta por validar).\n"
+        "4. En `[PROFILE_UPDATE]`, reporta los DATOS ATÓMICOS confirmados por el usuario (`titularidad`, `no_residente`, `residencia_fiscal_ccaa`, `ubicacion_inmueble_ccaa`, `municipio_inmueble`, `zona_tensionada`, `viviendas_total_espana`, `viviendas_en_zona_tensionada`, `superficie_residencial_m2`, `supera_1500_m2`, `tiene_copropiedad`, `objetivo_inversor`, `modalidad_alquiler`, `fecha_inicio_contrato`, `hechos_clave`); el motor calculará automáticamente `gran_tenedor` y `arquetipo_detectado`."
+    )
 
     # Reglas técnicas de búsqueda externa válidas para TODOS los ámbitos del asistente
     external_hint = (
@@ -1424,7 +1644,7 @@ def get_chat_response(
     )
 
     full_system_instruction = (
-        f"{system_instruction}{fecha_block}{external_hint}{ephemeral_doc_block}\n\n"
+        f"{system_instruction}{motor_block}{fecha_block}{external_hint}{ephemeral_doc_block}\n\n"
         f"Información de Contexto (Base Documental en knowledge_base):\n{contexto_seguro}"
     )
 
@@ -1460,9 +1680,8 @@ def get_chat_response(
                 raise cfg_err
         raw_response = response.text
 
-        # 1. Extraer y fusionar actualización de perfil de sesión [PROFILE_UPDATE] + respaldo determinista
-        base_with_explicit = _extract_explicit_facts_from_user_text(user_input, current_profile)
-        text_part, updated_profile = _extract_and_merge_profile(raw_response, base_with_explicit)
+        # 1. Extraer y fusionar actualización de perfil de sesión [PROFILE_UPDATE] y validar con motor determinista
+        text_part, updated_profile = _extract_and_merge_profile(raw_response, current_profile)
         recommendations = []
         
         if "[RESOURCES]" in text_part:
