@@ -1121,6 +1121,118 @@ def get_default_session_profile() -> Dict[str, Any]:
     }
 
 
+def _extract_explicit_facts_from_user_text(user_text: str, profile: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Respaldo determinista (cero asunciones): extrae SOLO datos explícitamente mencionados
+    por el usuario en su mensaje si el modelo no emitió [PROFILE_UPDATE] en ese turno.
+    """
+    if not user_text:
+        return profile
+
+    updated = {k: (list(v) if isinstance(v, list) else v) for k, v in profile.items()}
+    norm = _normalize_search_text(user_text)
+
+    # 1. Municipios y CCAA explícitos (con estado oficial de zona tensionada)
+    municipios_map = {
+        "talavera de la reina": ("Talavera de la Reina", "Castilla-La Mancha", False),
+        "talavera": ("Talavera de la Reina", "Castilla-La Mancha", False),
+        "guadalajara": ("Guadalajara", "Castilla-La Mancha", False),
+        "toledo": ("Toledo", "Castilla-La Mancha", False),
+        "alcala de henares": ("Alcalá de Henares", "Comunidad de Madrid", False),
+        "terrassa": ("Terrassa", "Cataluña", True),
+        "sabadell": ("Sabadell", "Cataluña", True),
+        "barcelona": ("Barcelona", "Cataluña", True),
+        "badalona": ("Badalona", "Cataluña", True),
+        "hospitalet": ("L'Hospitalet de Llobregat", "Cataluña", True),
+        "girona": ("Girona", "Cataluña", True),
+        "tarragona": ("Tarragona", "Cataluña", True),
+        "lleida": ("Lleida", "Cataluña", True),
+        "pamplona": ("Pamplona", "Navarra", True),
+        "donostia": ("Donostia / San Sebastián", "País Vasco", True),
+        "san sebastian": ("Donostia / San Sebastián", "País Vasco", True),
+        "bilbao": ("Bilbao", "País Vasco", True),
+        "errenteria": ("Errenteria", "País Vasco", True),
+        "a coruna": ("A Coruña", "Galicia", True),
+        "valencia": ("Valencia", "Comunidad Valenciana", False),
+        "alicante": ("Alicante", "Comunidad Valenciana", False),
+        "sevilla": ("Sevilla", "Andalucía", False),
+        "malaga": ("Málaga", "Andalucía", False),
+        "zaragoza": ("Zaragoza", "Aragón", False),
+        "murcia": ("Murcia", "Región de Murcia", False),
+    }
+
+    # Distinguir "vivo en X" (residencia fiscal) vs ubicación del inmueble
+    res_match = re.search(r"\b(?:vivo|resido|soy residente)\s+en\s+([a-z\s]{3,30})", norm)
+    if res_match and not updated.get("residencia_fiscal_ccaa"):
+        lugar_res = res_match.group(1).strip()
+        if any(w in lugar_res for w in ("extranjero", "fuera de espana", "londres", "francia", "alemania", "eeuu", "suiza", "dubai")):
+            updated["no_residente"] = True
+            updated["residencia_fiscal_ccaa"] = "Extranjero"
+        elif "madrid" in lugar_res:
+            updated["residencia_fiscal_ccaa"] = "Comunidad de Madrid"
+            updated["no_residente"] = False
+        elif "cataluna" in lugar_res or "barcelona" in lugar_res:
+            updated["residencia_fiscal_ccaa"] = "Cataluña"
+            updated["no_residente"] = False
+        elif "valencia" in lugar_res:
+            updated["residencia_fiscal_ccaa"] = "Comunidad Valenciana"
+            updated["no_residente"] = False
+        elif "andalucia" in lugar_res or "sevilla" in lugar_res or "malaga" in lugar_res:
+            updated["residencia_fiscal_ccaa"] = "Andalucía"
+            updated["no_residente"] = False
+
+    if "no residente" in norm or "vivo fuera de espana" in norm or "resido fuera de espana" in norm:
+        updated["no_residente"] = True
+    elif "residente en espana" in norm or "residente fiscal en espana" in norm:
+        updated["no_residente"] = False
+
+    for kw, (muni, ccaa, zt) in municipios_map.items():
+        if re.search(rf"\b{re.escape(kw)}\b", norm):
+            # Evitar pisar inmueble si solo se mencionó tras "vivo en <ciudad>"
+            if res_match and kw in res_match.group(1) and not re.search(rf"(?:piso|vivienda|inmueble|comprar|alquilar).{{0,35}}\b{re.escape(kw)}\b", norm):
+                continue
+            updated["municipio_inmueble"] = muni
+            updated["ubicacion_inmueble_ccaa"] = ccaa
+            updated["zona_tensionada"] = zt
+            break
+
+    if not updated.get("ubicacion_inmueble_ccaa") and re.search(r"(?:piso|vivienda|inmueble|comprar|alquilar).{0,35}\bmadrid\b", norm):
+        updated["municipio_inmueble"] = "Madrid"
+        updated["ubicacion_inmueble_ccaa"] = "Comunidad de Madrid"
+        updated["zona_tensionada"] = False
+
+    # 2. Modalidad de alquiler explícita
+    if re.search(r"\bhabitacion(?:es)?\b", norm):
+        updated["modalidad_alquiler"] = "habitaciones"
+    elif "vivienda habitual" in norm:
+        updated["modalidad_alquiler"] = "vivienda_habitual"
+    elif "alquiler de temporada" in norm or "alquiler temporal" in norm:
+        updated["modalidad_alquiler"] = "temporada"
+    elif re.search(r"\blocal(?:es)?\s+comercial", norm):
+        updated["modalidad_alquiler"] = "local"
+
+    # 3. Titularidad explícita (solo si el usuario la declara)
+    if any(p in norm for p in ("persona fisica", "a titulo personal", "como particular", "a mi nombre")):
+        updated["titularidad"] = "persona_fisica"
+    elif any(p in norm for p in ("persona juridica", "a traves de una sl", "mediante una sl", "como sl", "mi sociedad", "una sociedad limitada", "empresa sl")):
+        updated["titularidad"] = "persona_juridica"
+    elif "comunidad de bienes" in norm:
+        updated["titularidad"] = "comunidad_bienes"
+
+    # 4. Arquetipo inicial solo cuando hay señal clara en lo dicho
+    if not updated.get("arquetipo_detectado"):
+        if updated.get("no_residente") is True:
+            updated["arquetipo_detectado"] = "inversor_no_residente"
+        elif updated.get("titularidad") == "persona_juridica":
+            updated["arquetipo_detectado"] = "sociedad_inmobiliaria"
+        elif updated.get("gran_tenedor") is True and updated.get("titularidad") == "persona_fisica":
+            updated["arquetipo_detectado"] = "gran_tenedor_particular"
+        elif any(p in norm for p in ("comprar un piso", "invertir", "inversion", "prestamo personal", "roce", "rentabilidad", "otro piso", "segundo piso")):
+            updated["arquetipo_detectado"] = "inversor_crecimiento"
+
+    return updated
+
+
 def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str, Any]] = None) -> tuple:
     """
     Extrae el bloque oculto [PROFILE_UPDATE] {...} de la respuesta del modelo,
@@ -1302,7 +1414,14 @@ def get_chat_response(
     fecha_block = (
         f"\n\n[FECHA ACTUAL DE REFERENCIA]\n"
         f"Hoy es {fecha_hoy_str}. Utiliza SIEMPRE esta fecha para verificar años transcurridos, "
-        f"vencimientos de prórroga obligatoria (5 años persona física / 7 años persona jurídica) y plazos de preaviso."
+        f"vencimientos de prórroga obligatoria (5 años persona física / 7 años persona jurídica) y plazos de preaviso.\n\n"
+        "[ACTUALIZACIÓN OBLIGATORIA DE MEMORIA DE PERFIL — INCLUIDA FASE 1]\n"
+        "Al FINAL de tu respuesta (incluso si todavía estás en Fase 1 haciendo preguntas de triaje), SIEMPRE que el usuario "
+        "haya mencionado CUALQUIER dato concreto (municipio, CCAA, modalidad de alquiler, titularidad, residencia, intención de inversión, "
+        "fecha de contrato o hechos clave), DEBES incluir el bloque oculto:\n"
+        "[PROFILE_UPDATE]\n"
+        '{"campo_confirmado": "valor"}\n'
+        "Incluye ÚNICAMENTE datos explícitamente confirmados por el usuario o su documento (NUNCA supongas titularidad ni gran_tenedor si no lo dijo)."
     )
 
     full_system_instruction = (
@@ -1342,8 +1461,9 @@ def get_chat_response(
                 raise cfg_err
         raw_response = response.text
 
-        # 1. Extraer y fusionar actualización de perfil de sesión [PROFILE_UPDATE] (bloque oculto)
-        text_part, updated_profile = _extract_and_merge_profile(raw_response, current_profile)
+        # 1. Extraer y fusionar actualización de perfil de sesión [PROFILE_UPDATE] + respaldo determinista
+        base_with_explicit = _extract_explicit_facts_from_user_text(user_input, current_profile)
+        text_part, updated_profile = _extract_and_merge_profile(raw_response, base_with_explicit)
         recommendations = []
         
         if "[RESOURCES]" in text_part:

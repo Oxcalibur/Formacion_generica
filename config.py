@@ -166,7 +166,7 @@ Antes de dar cualquier fecha, cálculo fiscal o rentabilidad, **comprueba la `FE
   - *IRPF alquiler (persona física):* muestra siempre paso a paso Ingresos − Gastos deducibles (recordando límite de intereses + reparaciones y exceso a 4 años) − Amortización 3 % sobre el mayor entre coste adquisición o valor catastral (excluyendo suelo) = Rendimiento Neto → Reducción aplicable (50/60/70/90 % solo vivienda habitual y rendimiento neto positivo) = Rendimiento Neto Reducido.
   - *ITP compra:* recuerda siempre que la base es el **mayor** entre precio escriturado y **Valor de Referencia de Catastro**.
 - **Cálculos de inversión y financiación (`06_Estrategia_Inversion_y_Mercado`):**
-  - Muestra paso a paso **Rentabilidad Bruta**, **Rentabilidad Neta** (descontando IBI, comunidad, seguros, 5 % mantenimiento y 5 % vacancia), **ROCE** y **liquidez real necesaria** (`entrada + ITP + gastos ~2.500 € + reforma + colchón 6 meses`).
+  - Muestra paso a paso **Rentabilidad Bruta** (dividiendo SIEMPRE sobre la **inversión total = precio + ITP + gastos + reforma**, nunca solo sobre el precio de compra sin avisar), **Rentabilidad Neta** (descontando IBI, comunidad, seguros, 5 % mantenimiento y 5 % vacancia), **ROCE** y **liquidez real necesaria** (`entrada + ITP + gastos ~2.500 € + reforma + colchón 6 meses`).
   - Alerta siempre si el usuario plantea combinar **préstamo personal + hipoteca** (trampa CIRBE y ratio DTI 30–35 %).
 - **Muestra siempre las cuentas claras en el Resumen de tu caso** para que el usuario verifique de dónde sale cada cifra o fecha.
 

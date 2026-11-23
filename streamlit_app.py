@@ -210,7 +210,7 @@ with st.sidebar:
         if v is not None and v != [] and v != ""
     }
     if filled_profile:
-        with st.expander(get_text("sidebar_profile_memory_expander"), expanded=False):
+        with st.expander(get_text("sidebar_profile_memory_expander"), expanded=True):
             labels_map = {
                 "arquetipo_detectado": "Arquetipo",
                 "titularidad": "Titularidad",
