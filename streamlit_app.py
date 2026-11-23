@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import uuid
 from localization import get_text, TRANSLATIONS
 from config import CLIENT_CONFIG, SECURITY_CONFIG, apply_custom_styles
 from logic import (
@@ -49,6 +50,8 @@ if "ephemeral_doc" not in st.session_state:
     st.session_state.ephemeral_doc = None
 if "doc_uploader_key" not in st.session_state:
     st.session_state.doc_uploader_key = 0
+if "chat_session_id" not in st.session_state:
+    st.session_state.chat_session_id = uuid.uuid4().hex[:8]
 
 # --- Control de Acceso (Login) ---
 if SECURITY_CONFIG.get("enable_auth", False):
@@ -122,7 +125,7 @@ with st.sidebar:
             # Limpiar variables de sesión para asegurar que el próximo usuario cargue datos limpios
             keys_to_reset = ["logged_in", "username", "score", "active_sessions", "chat_history", 
                              "quiz_active", "current_questions", "session_interaction_recorded", "user_role", "language",
-                             "ephemeral_doc", "doc_uploader_key"]
+                             "ephemeral_doc", "doc_uploader_key", "chat_session_id"]
             for key in keys_to_reset:
                 if key in st.session_state:
                     del st.session_state[key]
@@ -217,15 +220,34 @@ if mode == get_text("nav_assistant"):
 
     # Panel siempre visible justo encima del chat para adjuntar documento temporal (solo en memoria)
     with st.container(border=True):
-        col_title, col_new = st.columns([4, 1])
+        col_title, col_export, col_new = st.columns([3.2, 1.4, 1.4])
         with col_title:
             st.markdown(f"**{get_text('doc_uploader_title')}**")
             st.caption(get_text("doc_privacy_note"))
+        with col_export:
+            if len(st.session_state.chat_history) > 1:
+                transcript_lines = [
+                    f"Conversación QA (Sesión: {st.session_state.chat_session_id})",
+                    "=" * 50,
+                    "",
+                ]
+                for m in st.session_state.chat_history:
+                    speaker = "USUARIO" if m["role"] == "user" else "ASISTENTE"
+                    transcript_lines.append(f"[{speaker}]\n{m['content']}\n")
+                st.download_button(
+                    label=get_text("export_chat_button"),
+                    data="\n".join(transcript_lines).encode("utf-8"),
+                    file_name=f"conversacion_{st.session_state.chat_session_id}.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                    key=f"export_chat_{st.session_state.chat_session_id}",
+                )
         with col_new:
             if st.button(get_text("doc_new_chat_button"), use_container_width=True):
                 st.session_state.chat_history = []
                 st.session_state.ephemeral_doc = None
                 st.session_state.doc_uploader_key += 1
+                st.session_state.chat_session_id = uuid.uuid4().hex[:8]
                 st.rerun()
 
         uploaded_file = st.file_uploader(
@@ -262,12 +284,6 @@ if mode == get_text("nav_assistant"):
     # Input de usuario
     prompt_final = hybrid_chat_input(get_text("assistant_input_placeholder"))
     if prompt_final:
-        # Registrar prompt de forma anónima si está habilitado
-        if CLIENT_CONFIG.get("log_prompts", False):
-            worksheet = CLIENT_CONFIG.get("prompts_worksheet_name")
-            if worksheet:
-                log_user_prompt(prompt_final, worksheet, st.session_state.user_role)
-
         # Registrar interacción si es la primera de la sesión
         if st.session_state.get("logged_in") and not st.session_state.session_interaction_recorded:
             auth_manager.update_user_progress(st.session_state.username, increment_session=True)
@@ -293,9 +309,10 @@ if mode == get_text("nav_assistant"):
             current_role = st.session_state.get("user_role", "Propietario particular")
             role_context = (
                 f"\n\nCONTEXTO DEL USUARIO:\nPerfil declarado en la plataforma: {current_role}\n"
-                "INSTRUCCIÓN: Haz el triaje de forma sutil, progresiva y en lenguaje cotidiano, adaptando cada nueva pregunta a lo que el usuario acaba de responder (1-2 preguntas breves por turno). "
-                "Si el usuario no entiende un término técnico, explícaselo en lenguaje sencillo antes de continuar. "
-                "Cuando emitas la respuesta final, muestra siempre primero un breve resumen de los datos recopilados sobre los que basas el resultado."
+                "INSTRUCCIÓN: Aplica el árbol de decisión condicional: pregunta solo 1-2 datos relevantes para la situación concreta, "
+                "permitiendo responder por texto o sugerir subir un documento concreto si lo tiene a mano (sin obligar). "
+                "NUNCA preguntes si es gran tenedor en consultas de subida de renta o nuevo contrato si la vivienda NO está en zona tensionada. "
+                "Verifica y muestra explícitamente la aritmética de fechas (5 años persona física / 7 persona jurídica) y aporta siempre alternativas legales estratégicas además de los límites."
             )
             full_prompt = base_prompt + role_context
             
@@ -312,6 +329,19 @@ if mode == get_text("nav_assistant"):
             text_response = response_data.get("text", "No he podido generar una respuesta.")
             recommendations = response_data.get("recommendations", [])
             documents = response_data.get("documents", [])
+
+        # Registrar turno completo (prompt + respuesta + session_id) en Google Sheets para QA (sin guardar el contrato adjunto)
+        if CLIENT_CONFIG.get("log_prompts", False):
+            worksheet = CLIENT_CONFIG.get("prompts_worksheet_name")
+            if worksheet:
+                log_user_prompt(
+                    prompt_final,
+                    worksheet,
+                    st.session_state.user_role,
+                    response_text=text_response,
+                    session_id=st.session_state.chat_session_id,
+                    doc_attached=bool(st.session_state.get("ephemeral_doc")),
+                )
 
         # Guardar la respuesta estructurada (texto + recomendaciones + documentos PDF) en el historial
         st.session_state.chat_history.append({

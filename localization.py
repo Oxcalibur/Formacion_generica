@@ -50,6 +50,7 @@ TRANSLATIONS = {
         "doc_loaded_msg": "📄 Documento activo solo en esta sesión: **{name}** ({summary})",
         "doc_remove_button": "🗑️ Quitar",
         "doc_new_chat_button": "🔄 Nueva consulta",
+        "export_chat_button": "📋 Descargar chat",
         "doc_download_pdf_button": "📄 Descargar '{title}' en PDF",
         "response_download_pdf_button": "📥 Descargar respuesta en PDF",
 
@@ -121,6 +122,7 @@ TRANSLATIONS = {
         "doc_loaded_msg": "📄 Active for this session only: **{name}** ({summary})",
         "doc_remove_button": "🗑️ Remove",
         "doc_new_chat_button": "🔄 New chat",
+        "export_chat_button": "📋 Export chat",
         "doc_download_pdf_button": "📄 Download '{title}' as PDF",
         "response_download_pdf_button": "📥 Download response as PDF",
 

@@ -1167,8 +1167,15 @@ def get_chat_response(
     else:
         contexto_seguro = knowledge_context[:90000] if knowledge_context else "No hay documentos cargados."
 
+    fecha_hoy_str = datetime.datetime.now().strftime("%d/%m/%Y")
+    fecha_block = (
+        f"\n\n[FECHA ACTUAL DE REFERENCIA]\n"
+        f"Hoy es {fecha_hoy_str}. Utiliza SIEMPRE esta fecha para verificar años transcurridos, "
+        f"vencimientos de prórroga obligatoria (5 años persona física / 7 años persona jurídica) y plazos de preaviso."
+    )
+
     full_system_instruction = (
-        f"{system_instruction}{external_hint}{ephemeral_doc_block}\n\n"
+        f"{system_instruction}{fecha_block}{external_hint}{ephemeral_doc_block}\n\n"
         f"Información de Contexto (Base Documental en knowledge_base):\n{contexto_seguro}"
     )
 
@@ -1178,11 +1185,30 @@ def get_chat_response(
     needs_post_oct_2026 = bool(requiere_video_post_oct_2026 and requiere_video_post_oct_2026(recent_user_context))
     
     try:
-        response = llamar_gemini_con_rotacion_y_reintento(
-            model_name=model_name,
-            contents=contents,
-            config=types.GenerateContentConfig(system_instruction=full_system_instruction)
-        )
+        gen_config_kwargs: Dict[str, Any] = {
+            "system_instruction": full_system_instruction,
+            "temperature": 0.15,
+        }
+        # Activar razonamiento interno en modelos Gemini 2.5 para verificar fechas, plazos y lógica legal
+        if "2.5" in str(model_name) and hasattr(types, "ThinkingConfig"):
+            gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=2048)
+
+        try:
+            response = llamar_gemini_con_rotacion_y_reintento(
+                model_name=model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(**gen_config_kwargs)
+            )
+        except Exception as cfg_err:
+            if "thinking" in str(cfg_err).lower() and "thinking_config" in gen_config_kwargs:
+                gen_config_kwargs.pop("thinking_config", None)
+                response = llamar_gemini_con_rotacion_y_reintento(
+                    model_name=model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(**gen_config_kwargs)
+                )
+            else:
+                raise cfg_err
         raw_response = response.text
 
         # Parsear la respuesta para separar texto y recursos
@@ -1350,17 +1376,27 @@ def _get_gsheets_spreadsheet_url() -> Optional[str]:
         return None
 
 
-def log_user_prompt(prompt_text: str, worksheet_name: str, role: str = "User"):
+def log_user_prompt(
+    prompt_text: str,
+    worksheet_name: str,
+    role: str = "User",
+    response_text: str = "",
+    session_id: str = "",
+    doc_attached: bool = False,
+):
     """
-    Registra el prompt de un usuario en una hoja de cálculo de Google Sheets.
-    Soporta pestañas recién creadas/vacías y pasa explícitamente spreadsheet=url.
+    Registra un turno completo de conversación (prompt + respuesta del asistente + session_id)
+    en Google Sheets para auditoría y mejora de calidad (QA).
+    Nunca registra el contenido de documentos adjuntados por el usuario.
     """
     if GSheetsConnection is None:
-        print("GSheetsConnection no disponible. Saltando registro de prompt.")
+        print("GSheetsConnection no disponible. Saltando registro de conversación.")
         return
 
     if not prompt_text or not worksheet_name:
         return
+
+    target_cols = ["session_id", "timestamp", "role", "prompt", "response", "doc_attached"]
 
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -1368,9 +1404,12 @@ def log_user_prompt(prompt_text: str, worksheet_name: str, role: str = "User"):
         
         new_prompt_df = pd.DataFrame([
             {
+                "session_id": session_id or "sin_sesion",
                 "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "role": role,
                 "prompt": prompt_text,
+                "response": (response_text or "")[:15000],
+                "doc_attached": "Sí" if doc_attached else "No",
             }
         ])
 
@@ -1380,15 +1419,18 @@ def log_user_prompt(prompt_text: str, worksheet_name: str, role: str = "User"):
                 if url else conn.read(worksheet=worksheet_name, ttl=0)
             )
             if existing_df is None or existing_df.empty:
-                existing_df = pd.DataFrame(columns=["timestamp", "role", "prompt"])
+                existing_df = pd.DataFrame(columns=target_cols)
             else:
                 existing_df = existing_df.dropna(how="all")
-                if not {"timestamp", "role", "prompt"}.issubset(set(existing_df.columns)):
-                    existing_df = pd.DataFrame(columns=["timestamp", "role", "prompt"])
+                if "prompt" not in existing_df.columns:
+                    existing_df = pd.DataFrame(columns=target_cols)
                 else:
-                    existing_df = existing_df[["timestamp", "role", "prompt"]]
+                    for col in target_cols:
+                        if col not in existing_df.columns:
+                            existing_df[col] = ""
+                    existing_df = existing_df[target_cols]
         except Exception:
-            existing_df = pd.DataFrame(columns=["timestamp", "role", "prompt"])
+            existing_df = pd.DataFrame(columns=target_cols)
 
         updated_df = pd.concat([existing_df, new_prompt_df], ignore_index=True)
         if url:
@@ -1398,7 +1440,7 @@ def log_user_prompt(prompt_text: str, worksheet_name: str, role: str = "User"):
 
     except Exception as e:
         # Fallo silencioso para no impactar la experiencia de usuario
-        print(f"Error al registrar prompt en Google Sheets ({worksheet_name}): {e}")
+        print(f"Error al registrar conversación en Google Sheets ({worksheet_name}): {e}")
 
 
 def get_logged_prompts(worksheet_name: str):
