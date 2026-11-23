@@ -1219,7 +1219,8 @@ def _extract_explicit_facts_from_user_text(user_text: str, profile: Dict[str, An
     elif "comunidad de bienes" in norm:
         updated["titularidad"] = "comunidad_bienes"
 
-    # 4. Arquetipo inicial solo cuando hay señal clara en lo dicho
+    # 4. Arquetipo inicial SOLO cuando es 100 % inequívoco sin asumir tamaño de cartera
+    #    (nunca asumir 'inversor_crecimiento' ni 'propietario_particular' sin conocer nº de viviendas)
     if not updated.get("arquetipo_detectado"):
         if updated.get("no_residente") is True:
             updated["arquetipo_detectado"] = "inversor_no_residente"
@@ -1227,8 +1228,6 @@ def _extract_explicit_facts_from_user_text(user_text: str, profile: Dict[str, An
             updated["arquetipo_detectado"] = "sociedad_inmobiliaria"
         elif updated.get("gran_tenedor") is True and updated.get("titularidad") == "persona_fisica":
             updated["arquetipo_detectado"] = "gran_tenedor_particular"
-        elif any(p in norm for p in ("comprar un piso", "invertir", "inversion", "prestamo personal", "roce", "rentabilidad", "otro piso", "segundo piso")):
-            updated["arquetipo_detectado"] = "inversor_crecimiento"
 
     return updated
 
