@@ -9,7 +9,8 @@ from logic import (
     get_chat_response, load_knowledge_base, generate_dynamic_topics, 
     calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, 
     graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts, analyze_prompt_patterns, graficar_patrones_prompts, 
-    calculate_historical_improvement_rate, load_multimedia_resources, extract_ephemeral_document, generate_pdf_bytes
+    calculate_historical_improvement_rate, load_multimedia_resources, extract_ephemeral_document, generate_pdf_bytes,
+    get_default_session_profile
 )
 from auth import get_auth_manager
 from componentes_ui import hybrid_chat_input
@@ -52,6 +53,8 @@ if "doc_uploader_key" not in st.session_state:
     st.session_state.doc_uploader_key = 0
 if "chat_session_id" not in st.session_state:
     st.session_state.chat_session_id = uuid.uuid4().hex[:8]
+if "user_profile_memory" not in st.session_state:
+    st.session_state.user_profile_memory = get_default_session_profile()
 
 # --- Control de Acceso (Login) ---
 if SECURITY_CONFIG.get("enable_auth", False):
@@ -125,7 +128,7 @@ with st.sidebar:
             # Limpiar variables de sesión para asegurar que el próximo usuario cargue datos limpios
             keys_to_reset = ["logged_in", "username", "score", "active_sessions", "chat_history", 
                              "quiz_active", "current_questions", "session_interaction_recorded", "user_role", "language",
-                             "ephemeral_doc", "doc_uploader_key", "chat_session_id"]
+                             "ephemeral_doc", "doc_uploader_key", "chat_session_id", "user_profile_memory"]
             for key in keys_to_reset:
                 if key in st.session_state:
                     del st.session_state[key]
@@ -136,6 +139,37 @@ with st.sidebar:
         st.success(get_text("sidebar_kb_connected"))
     else:
         st.warning(get_text("sidebar_kb_empty"))
+
+    # Memoria de perfil detectado en la conversación actual (visible solo cuando tiene datos confirmados)
+    mem_profile = st.session_state.get("user_profile_memory", {})
+    filled_profile = {
+        k: v for k, v in mem_profile.items()
+        if v is not None and v != [] and v != ""
+    }
+    if filled_profile:
+        with st.expander(get_text("sidebar_profile_memory_expander"), expanded=False):
+            labels_map = {
+                "arquetipo_detectado": "Arquetipo",
+                "titularidad": "Titularidad",
+                "gran_tenedor": "Gran tenedor",
+                "residencia_fiscal_ccaa": "Residencia fiscal",
+                "ubicacion_inmueble_ccaa": "CCAA inmueble",
+                "municipio_inmueble": "Municipio",
+                "zona_tensionada": "Zona tensionada",
+                "modalidad_alquiler": "Modalidad",
+                "no_residente": "No residente",
+                "fecha_inicio_contrato": "Inicio contrato",
+            }
+            for key, label in labels_map.items():
+                if key in filled_profile:
+                    val = filled_profile[key]
+                    if isinstance(val, bool):
+                        val = "Sí" if val else "No"
+                    st.markdown(f"- **{label}:** `{val}`")
+            if filled_profile.get("hechos_clave"):
+                st.markdown("**Hechos confirmados:**")
+                for h in filled_profile["hechos_clave"][-5:]:
+                    st.markdown(f"  - {h}")
     
     st.divider()
     
@@ -248,6 +282,7 @@ if mode == get_text("nav_assistant"):
                 st.session_state.ephemeral_doc = None
                 st.session_state.doc_uploader_key += 1
                 st.session_state.chat_session_id = uuid.uuid4().hex[:8]
+                st.session_state.user_profile_memory = get_default_session_profile()
                 st.rerun()
 
         uploaded_file = st.file_uploader(
@@ -324,14 +359,17 @@ if mode == get_text("nav_assistant"):
                 knowledge_context=st.session_state.knowledge_base,
                 multimedia_index=local_resources,
                 kb_folder=kb_path,
-                ephemeral_doc=st.session_state.get("ephemeral_doc")
+                ephemeral_doc=st.session_state.get("ephemeral_doc"),
+                session_profile=st.session_state.get("user_profile_memory"),
             )
             
             text_response = response_data.get("text", "No he podido generar una respuesta.")
             recommendations = response_data.get("recommendations", [])
             documents = response_data.get("documents", [])
+            if response_data.get("updated_profile"):
+                st.session_state.user_profile_memory = response_data["updated_profile"]
 
-        # Registrar turno completo (prompt + respuesta + session_id) en Google Sheets para QA (sin guardar el contrato adjunto)
+        # Registrar turno completo (prompt + respuesta + session_id + arquetipo) en Google Sheets para QA (sin guardar el contrato adjunto)
         if CLIENT_CONFIG.get("log_prompts", False):
             worksheet = CLIENT_CONFIG.get("prompts_worksheet_name")
             if worksheet:
@@ -342,6 +380,7 @@ if mode == get_text("nav_assistant"):
                     response_text=text_response,
                     session_id=st.session_state.chat_session_id,
                     doc_attached=bool(st.session_state.get("ephemeral_doc")),
+                    arquetipo=str(st.session_state.user_profile_memory.get("arquetipo_detectado") or ""),
                 )
 
         # Guardar la respuesta estructurada (texto + recomendaciones + documentos PDF) en el historial

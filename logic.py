@@ -1096,6 +1096,93 @@ def extract_ephemeral_document(uploaded_file) -> Dict[str, Any]:
     return {"error": f"Formato no soportado ({ext}). Usa PDF, DOCX, TXT, MD o imagen (PNG/JPG)."}
 
 
+DEFAULT_SESSION_PROFILE: Dict[str, Any] = {
+    "arquetipo_detectado": None,
+    "titularidad": None,
+    "gran_tenedor": None,
+    "residencia_fiscal_ccaa": None,
+    "ubicacion_inmueble_ccaa": None,
+    "municipio_inmueble": None,
+    "zona_tensionada": None,
+    "modalidad_alquiler": None,
+    "no_residente": None,
+    "fecha_inicio_contrato": None,
+    "hechos_clave": [],
+}
+
+ALLOWED_PROFILE_KEYS = set(DEFAULT_SESSION_PROFILE.keys())
+
+
+def get_default_session_profile() -> Dict[str, Any]:
+    """Devuelve una copia limpia del perfil de memoria de sesión."""
+    return {
+        k: (list(v) if isinstance(v, list) else v)
+        for k, v in DEFAULT_SESSION_PROFILE.items()
+    }
+
+
+def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str, Any]] = None) -> tuple:
+    """
+    Extrae el bloque oculto [PROFILE_UPDATE] {...} de la respuesta del modelo,
+    lo elimina del texto visible y fusiona los campos confirmados en la memoria de sesión.
+    """
+    merged = get_default_session_profile()
+    if isinstance(current_profile, dict):
+        for k in ALLOWED_PROFILE_KEYS:
+            if k in current_profile and current_profile[k] is not None:
+                merged[k] = list(current_profile[k]) if isinstance(current_profile[k], list) else current_profile[k]
+
+    if not raw_text or "[PROFILE_UPDATE]" not in raw_text:
+        return raw_text, merged
+
+    idx = raw_text.find("[PROFILE_UPDATE]")
+    before = raw_text[:idx]
+    after = raw_text[idx + len("[PROFILE_UPDATE]"):]
+
+    # Limpiar posible bloque markdown ```json ... ``` inmediatamente después de la etiqueta
+    after_stripped = after.lstrip()
+    fence_end_offset = 0
+    parse_src = after_stripped
+    if after_stripped.startswith("```"):
+        newline_pos = after_stripped.find("\n")
+        if newline_pos != -1:
+            parse_src = after_stripped[newline_pos + 1:]
+
+    brace_idx = parse_src.find("{")
+    if brace_idx != -1:
+        try:
+            decoder = json.JSONDecoder()
+            update_obj, end_pos = decoder.raw_decode(parse_src[brace_idx:])
+            if isinstance(update_obj, dict):
+                for k, v in update_obj.items():
+                    if k not in ALLOWED_PROFILE_KEYS or v is None:
+                        continue
+                    if k == "hechos_clave":
+                        if isinstance(v, list):
+                            existing = list(merged.get("hechos_clave") or [])
+                            for fact in v:
+                                fact_str = str(fact).strip()
+                                if fact_str and fact_str not in existing:
+                                    existing.append(fact_str)
+                            merged["hechos_clave"] = existing[-12:]
+                    else:
+                        if isinstance(v, str) and not v.strip():
+                            continue
+                        merged[k] = v
+
+            # Conservar cualquier texto posterior al bloque JSON (ej. [RESOURCES] si venía después)
+            remainder = parse_src[brace_idx + end_pos:].lstrip()
+            if remainder.startswith("```"):
+                remainder = remainder[3:].lstrip()
+            cleaned_text = f"{before.rstrip()}\n\n{remainder}".strip() if remainder else before.strip()
+            return cleaned_text, merged
+        except Exception as e:
+            print(f"No se pudo parsear [PROFILE_UPDATE]: {e}")
+
+    # Si no había JSON válido, eliminar igualmente la etiqueta residual para no ensuciar el chat
+    return before.strip(), merged
+
+
 def get_chat_response(
     history: list,
     user_input: str,
@@ -1104,17 +1191,36 @@ def get_chat_response(
     multimedia_index: Optional[list] = None,
     kb_folder: Optional[str] = None,
     ephemeral_doc: Optional[Dict[str, Any]] = None,
+    session_profile: Optional[Dict[str, Any]] = None,
 ) -> dict:
-    """Obtiene respuesta del chat de Gemini usando recuperación multi-carpeta sobre knowledge_base."""
+    """Obtiene respuesta del chat de Gemini con memoria de perfil, coherencia multi-turno y recuperación multi-carpeta."""
+    current_profile = get_default_session_profile()
+    if isinstance(session_profile, dict):
+        for k in ALLOWED_PROFILE_KEYS:
+            if k in session_profile and session_profile[k] is not None:
+                current_profile[k] = list(session_profile[k]) if isinstance(session_profile[k], list) else session_profile[k]
+
     client = init_gemini()
     if not client:
-        return {"text": "Modo demostración: Configura tu API Key para chatear con Gemini real.", "recommendations": []}
+        return {
+            "text": "Modo demostración: Configura tu API Key para chatear con Gemini real.",
+            "recommendations": [],
+            "documents": [],
+            "updated_profile": current_profile,
+        }
     
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
     
-    # Serializar e inyectar el índice multimedia en el prompt del sistema
+    # Serializar e inyectar el índice multimedia y la memoria de perfil de sesión en el prompt del sistema
     local_resources_str = json.dumps(multimedia_index, ensure_ascii=False) if multimedia_index else "No hay recursos locales disponibles."
-    system_instruction = system_instruction.replace("{multimedia_index_placeholder}", local_resources_str)
+    profile_json_str = json.dumps(current_profile, ensure_ascii=False, indent=2)
+    system_instruction = (
+        system_instruction
+        .replace("{multimedia_index_placeholder}", local_resources_str)
+        .replace("{session_profile_placeholder}", profile_json_str)
+    )
+    if "<memoria_perfil_sesion>" not in system_instruction:
+        system_instruction += f"\n\n<memoria_perfil_sesion>\n{profile_json_str}\n</memoria_perfil_sesion>"
 
     # Reglas técnicas de búsqueda externa válidas para TODOS los ámbitos del asistente
     external_hint = (
@@ -1126,10 +1232,10 @@ def get_chat_response(
         "- Si no es necesario un vídeo o no existe ninguno actualizado, omite completamente el bloque `[RESOURCES]`."
     )
 
-    # Construir historial estructurado para Gemini (Últimas 12 interacciones para preservar triaje y borradores)
+    # Construir historial estructurado para Gemini (Últimas 20 interacciones para mantener coherencia completa)
     contents = []
     expected_role = "user"
-    for msg in history[-12:]:
+    for msg in history[-20:]:
         role = "user" if msg["role"] == "user" else "model"
         
         # Regla estricta de Gemini: Debe empezar por 'user' y alternar
@@ -1142,9 +1248,17 @@ def get_chat_response(
             )
             expected_role = "model" if role == "user" else "user"
 
+    # Enriquecer la query de recuperación documental con el perfil ya confirmado (coherencia entre temas)
+    profile_keywords = " ".join(
+        str(v) for k, v in current_profile.items()
+        if v is not None and k != "hechos_clave" and not isinstance(v, bool)
+    )
+    if current_profile.get("hechos_clave"):
+        profile_keywords += " " + " ".join(current_profile["hechos_clave"][-5:])
+
     # Inyectar documento temporal del usuario (solo en memoria para esta sesión; nunca persistido)
     ephemeral_doc_block = ""
-    retrieval_query = user_input or ""
+    retrieval_query = f"{user_input or ''} {profile_keywords}".strip()
     if ephemeral_doc and not ephemeral_doc.get("error"):
         doc_name = ephemeral_doc.get("name", "documento_usuario")
         if ephemeral_doc.get("mode") == "text" and ephemeral_doc.get("text"):
@@ -1228,12 +1342,12 @@ def get_chat_response(
                 raise cfg_err
         raw_response = response.text
 
-        # Parsear la respuesta para separar texto y recursos
-        text_part = raw_response
+        # 1. Extraer y fusionar actualización de perfil de sesión [PROFILE_UPDATE] (bloque oculto)
+        text_part, updated_profile = _extract_and_merge_profile(raw_response, current_profile)
         recommendations = []
         
-        if "[RESOURCES]" in raw_response:
-            parts = raw_response.split("[RESOURCES]", 1)
+        if "[RESOURCES]" in text_part:
+            parts = text_part.split("[RESOURCES]", 1)
             text_part = parts[0].strip()
             try:
                 json_str = parts[1].strip()
@@ -1306,9 +1420,15 @@ def get_chat_response(
             "text": text_part,
             "recommendations": recommendations,
             "documents": generated_docs,
+            "updated_profile": updated_profile,
         }
     except Exception as e:
-        return {"text": f"⚠️ **Error inesperado:** `{e}`", "recommendations": [], "documents": []}
+        return {
+            "text": f"⚠️ **Error inesperado:** `{e}`",
+            "recommendations": [],
+            "documents": [],
+            "updated_profile": current_profile,
+        }
 
 @st.cache_data(show_spinner=False, ttl=86400)
 def generate_dynamic_roles(knowledge_context):
@@ -1404,9 +1524,10 @@ def log_user_prompt(
     response_text: str = "",
     session_id: str = "",
     doc_attached: bool = False,
+    arquetipo: str = "",
 ):
     """
-    Registra un turno completo de conversación (prompt + respuesta del asistente + session_id)
+    Registra un turno completo de conversación (prompt + respuesta del asistente + session_id + arquetipo)
     en Google Sheets para auditoría y mejora de calidad (QA).
     Nunca registra el contenido de documentos adjuntados por el usuario.
     """
@@ -1417,7 +1538,7 @@ def log_user_prompt(
     if not prompt_text or not worksheet_name:
         return
 
-    target_cols = ["session_id", "timestamp", "role", "prompt", "response", "doc_attached"]
+    target_cols = ["session_id", "timestamp", "role", "arquetipo", "prompt", "response", "doc_attached"]
 
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -1428,6 +1549,7 @@ def log_user_prompt(
                 "session_id": session_id or "sin_sesion",
                 "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "role": role,
+                "arquetipo": arquetipo or "",
                 "prompt": prompt_text,
                 "response": (response_text or "")[:15000],
                 "doc_attached": "Sí" if doc_attached else "No",
