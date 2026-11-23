@@ -1524,6 +1524,9 @@ def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str
     before = raw_text[:idx]
     after = raw_text[idx + len("[PROFILE_UPDATE]"):]
 
+    # Limpiar backticks o bloques markdown residuales inmediatamente antes de [PROFILE_UPDATE]
+    before = re.sub(r'(?:\r?\n)?`{1,3}(?:json|markdown|md|text)?\s*$', '', before.rstrip())
+
     # Limpiar posible bloque markdown ```json ... ``` inmediatamente después de la etiqueta
     after_stripped = after.lstrip()
     parse_src = after_stripped
@@ -1531,6 +1534,8 @@ def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str
         newline_pos = after_stripped.find("\n")
         if newline_pos != -1:
             parse_src = after_stripped[newline_pos + 1:]
+    elif after_stripped.startswith("`"):
+        parse_src = after_stripped.lstrip("`").lstrip()
 
     brace_idx = parse_src.find("{")
     if brace_idx != -1:
@@ -1557,19 +1562,21 @@ def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str
                             continue
                         merged[k] = v
 
-            # Conservar cualquier texto posterior al bloque JSON (ej. [RESOURCES] si venía después)
+            # Conservar cualquier texto posterior al bloque JSON (ej. [RESOURCES] si venía después), limpiando backticks sueltos
             remainder = parse_src[brace_idx + end_pos:].lstrip()
-            if remainder.startswith("```"):
-                remainder = remainder[3:].lstrip()
+            remainder = re.sub(r'^`{1,3}\s*', '', remainder)
+            remainder = re.sub(r'\s*`{1,3}\s*$', '', remainder).strip()
             cleaned_text = f"{before.rstrip()}\n\n{remainder}".strip() if remainder else before.strip()
+            cleaned_text = re.sub(r'(?:\r?\n\s*`{1,3}\s*)+$', '', cleaned_text).strip()
             merged, _ = aplicar_motor_a_perfil(merged)
             return cleaned_text, merged
         except Exception as e:
             print(f"No se pudo parsear [PROFILE_UPDATE]: {e}")
 
-    # Si no había JSON válido, eliminar igualmente la etiqueta residual para no ensuciar el chat
+    # Si no había JSON válido, eliminar igualmente la etiqueta y backticks residuales para no ensuciar el chat
+    cleaned_fallback = re.sub(r'(?:\r?\n\s*`{1,3}\s*)+$', '', before.strip()).strip()
     merged, _ = aplicar_motor_a_perfil(merged)
-    return before.strip(), merged
+    return cleaned_fallback, merged
 
 
 def get_chat_response(
@@ -1599,10 +1606,9 @@ def get_chat_response(
     
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
     
-    # Serializar e inyectar el índice multimedia, la memoria de perfil y el dictamen del motor legal
+    # Serializar e inyectar el índice multimedia y la memoria de perfil en el prompt del sistema
     local_resources_str = json.dumps(multimedia_index, ensure_ascii=False) if multimedia_index else "No hay recursos locales disponibles."
     profile_json_str = json.dumps(current_profile, ensure_ascii=False, indent=2)
-    motor_json_str = json.dumps(motor_eval, ensure_ascii=False, indent=2)
     system_instruction = (
         system_instruction
         .replace("{multimedia_index_placeholder}", local_resources_str)
@@ -1611,17 +1617,41 @@ def get_chat_response(
     if "<memoria_perfil_sesion>" not in system_instruction:
         system_instruction += f"\n\n<memoria_perfil_sesion>\n{profile_json_str}\n</memoria_perfil_sesion>"
 
+    # Determinar si preguntar por Gran Tenedor / 1.500 m² es realmente pertinente en ESTE turno
+    norm_turn_text = _normalize_search_text(user_input or "")
+    triggers_gt_ahora = (
+        "gran tenedor", "desahucio", "impago", "sin pagar", "vulnerab",
+        "serpavi", "zona tensionada", "conciliacion", "intermediacion",
+        "1500", "1.500", "patrimonio", "edav", "sociedad patrimonial",
+    )
+    requiere_gt_ahora = bool(
+        current_profile.get("zona_tensionada") is True
+        or any(t in norm_turn_text for t in triggers_gt_ahora)
+    )
+    motor_eval["preguntar_gran_tenedor_ahora"] = requiere_gt_ahora
+    motor_json_str = json.dumps(motor_eval, ensure_ascii=False, indent=2)
+
+    if requiere_gt_ahora:
+        regla_gt_turno = (
+            "2. En ESTE turno SÍ puede afectar la condición de Gran Tenedor (zona tensionada, desahucio, vulnerabilidad o consulta expresa): "
+            "si `gran_tenedor` es `null`, pregunta solo los datos que falten en `datos_faltantes_gran_tenedor` (incluyendo total en España y 1.500 m²) "
+            "y NUNCA afirmes que es o no es gran tenedor hasta que el motor lo confirme."
+        )
+    else:
+        regla_gt_turno = (
+            "2. `preguntar_gran_tenedor_ahora` es `false`: **PROHIBIDO** preguntar en este turno por gran tenedor, por el número total de viviendas "
+            "o por los 1.500 m² (no afectan a la consulta actual y resulta molesto repetirlos). NUNCA menciones 'completar tu perfil para la plataforma' ni insistas en cerrar un arquetipo interno."
+        )
+
     motor_block = (
         "\n\n<estado_motor_calificacion_legal>\n"
         f"{motor_json_str}\n"
         "</estado_motor_calificacion_legal>\n"
         "REGLA VINCULANTE DEL MOTOR DE CALIFICACIÓN LEGAL:\n"
         "1. NUNCA contradigas el dictamen del motor (`gran_tenedor` y `arquetipo_detectado`).\n"
-        "2. Si `gran_tenedor` es `null` y el tema requiere saberlo (zona tensionada, desahucio, vulnerabilidad o calificar el perfil patrimonial del usuario), "
-        "DEBES preguntar los elementos exactos listados en `datos_faltantes_gran_tenedor` (incluyendo los 1.500 m² construidos residenciales y el total de viviendas en TODA España) "
-        "y NUNCA afirmar que es o no es gran tenedor hasta que el motor lo confirme.\n"
-        "3. Si `arquetipo_detectado` es `null`, NO inventes ni escribas un arquetipo en el 'Resumen de tu caso' (indica simplemente los datos confirmados y qué falta por validar).\n"
-        "4. En `[PROFILE_UPDATE]`, reporta los DATOS ATÓMICOS confirmados por el usuario (`titularidad`, `no_residente`, `residencia_fiscal_ccaa`, `ubicacion_inmueble_ccaa`, `municipio_inmueble`, `zona_tensionada`, `viviendas_total_espana`, `viviendas_en_zona_tensionada`, `superficie_residencial_m2`, `supera_1500_m2`, `tiene_copropiedad`, `objetivo_inversor`, `modalidad_alquiler`, `fecha_inicio_contrato`, `hechos_clave`); el motor calculará automáticamente `gran_tenedor` y `arquetipo_detectado`."
+        f"{regla_gt_turno}\n"
+        "3. Si `arquetipo_detectado` es `null`, NO inventes ni escribas un arquetipo en el 'Resumen de tu caso'.\n"
+        "4. En `[PROFILE_UPDATE]`, reporta los DATOS ATÓMICOS confirmados por el usuario en texto plano SIN envolver el bloque en comillas invertidas (`) ni en bloques ```."
     )
 
     # Reglas técnicas de búsqueda externa válidas para TODOS los ámbitos del asistente
@@ -1728,6 +1758,7 @@ def get_chat_response(
         gen_config_kwargs: Dict[str, Any] = {
             "system_instruction": full_system_instruction,
             "temperature": 0.15,
+            "max_output_tokens": 4096,
         }
         # Activar razonamiento interno en modelos Gemini 2.5 para verificar fechas, plazos y lógica legal
         if "2.5" in str(model_name) and hasattr(types, "ThinkingConfig"):
@@ -1934,10 +1965,11 @@ def log_user_prompt(
     session_id: str = "",
     doc_attached: Any = False,
     arquetipo: str = "",
+    username: str = "",
 ):
     """
-    Registra un turno completo de conversación (prompt + respuesta del asistente + session_id + arquetipo)
-    en Google Sheets para auditoría y mejora de calidad (QA).
+    Registra un turno completo de conversación (session_id + timestamp + username + role + arquetipo + prompt + response + doc_attached)
+    en Google Sheets para trazabilidad y auditoría QA.
     Nunca registra el contenido de documentos adjuntados por el usuario (solo 'Sí (nombre)' o 'No').
     """
     if GSheetsConnection is None:
@@ -1947,7 +1979,7 @@ def log_user_prompt(
     if not prompt_text or not worksheet_name:
         return
 
-    target_cols = ["session_id", "timestamp", "role", "arquetipo", "prompt", "response", "doc_attached"]
+    target_cols = ["session_id", "timestamp", "username", "role", "arquetipo", "prompt", "response", "doc_attached"]
 
     if isinstance(doc_attached, str) and doc_attached.strip():
         doc_flag = f"Sí ({doc_attached.strip()})" if doc_attached.strip() not in ("Sí", "No") else doc_attached.strip()
@@ -1964,6 +1996,7 @@ def log_user_prompt(
             {
                 "session_id": session_id or "sin_sesion",
                 "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "username": (username or "").strip() or "anonimo",
                 "role": role,
                 "arquetipo": arquetipo or "",
                 "prompt": prompt_text,

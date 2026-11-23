@@ -459,6 +459,7 @@ if mode == get_text("nav_assistant"):
                     session_id=st.session_state.chat_session_id,
                     doc_attached=doc_attached_label,
                     arquetipo=str(st.session_state.user_profile_memory.get("arquetipo_detectado") or ""),
+                    username=st.session_state.get("username", "anonimo"),
                 )
 
         # Guardar la respuesta estructurada (texto + recomendaciones + documentos PDF) en el historial

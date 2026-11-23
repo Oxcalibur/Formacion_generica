@@ -164,13 +164,14 @@ def format_conversations_for_audit(df_new: pd.DataFrame, max_chars: int = 85000)
         lines = [f"=== SESIÓN: {sid} ({len(group)} turnos) ==="]
         for _, row in group.iterrows():
             ts_str = row["_parsed_ts"].strftime("%Y-%m-%d %H:%M:%S")
+            uname = str(row.get("username") or "").strip()
             role = str(row.get("role") or "").strip()
             arq = str(row.get("arquetipo") or "").strip()
             doc = str(row.get("doc_attached") or "").strip()
             prompt = str(row.get("prompt") or "").strip()
             resp = str(row.get("response") or "").strip()
 
-            meta = f"[{ts_str}] Perfil: {role or 'N/A'} | Arquetipo: {arq or 'vacío'} | Doc: {doc or 'N/A'}"
+            meta = f"[{ts_str}] Usuario: {uname or 'N/A'} | Perfil: {role or 'N/A'} | Arquetipo: {arq or 'vacío'} | Doc: {doc or 'N/A'}"
             lines.append(meta)
             lines.append(f"  USUARIO: {prompt[:1500]}")
             if resp and resp.lower() != "nan":
