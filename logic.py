@@ -365,7 +365,18 @@ def retrieve_relevant_knowledge(
         for tok in sec_tokens:
             doc_freq[tok] = doc_freq.get(tok, 0) + 1
 
-    # Documentos compactos clave (<= 12 KB, ej. RDL 29/2026, plantillas cortas, datos volátiles) se incluyen siempre
+    # Detectar intención de fiscalidad / financiación / inversión para priorizar 05_ y 06_
+    norm_combined_query = _normalize_search_text(combined_query)
+    fiscal_fin_inv_terms = (
+        "irpf", "itp", "ajd", "impuesto", "amortizacion", "deducir", "deducible",
+        "reduccion", "base imponible", "valor de referencia", "hipoteca", "lcci",
+        "fein", "cirbe", "dti", "ltv", "prestamo", "apalancamiento", "financiacion",
+        "inversion", "rentabilidad", "roce", "cash flow", "ticket bajo", "patrimonial",
+        "sociedad", "persona juridica", "comprar piso", "gastos de compra"
+    )
+    is_fiscal_fin_inv = any(term in norm_combined_query for term in fiscal_fin_inv_terms)
+
+    # Documentos compactos clave (<= 12 KB, ej. RDL 29/2026, guías de estrategia/IRPF/ITP/financiación, datos CCAA)
     always_include_paths = {doc["rel_path"] for doc in kb_data["documents"] if doc["char_count"] <= 12000}
 
     scored = []
@@ -386,8 +397,10 @@ def retrieve_relevant_knowledge(
             if ref in sec_norm:
                 score += 12.0
 
-        # Pequeña bonificación según prioridad documental definida en Fase 2
-        if sec["folder"].startswith("01_"):
+        # Bonificación contextual según carpeta documental (01_ a 06_)
+        if is_fiscal_fin_inv and (sec["folder"].startswith("05_") or sec["folder"].startswith("06_")):
+            score += 2.5
+        elif sec["folder"].startswith("01_"):
             score += 0.4
         elif sec["folder"].startswith("02_"):
             score += 0.3
@@ -395,6 +408,10 @@ def retrieve_relevant_knowledge(
             score += 0.25
         elif sec["folder"].startswith("04_"):
             score += 0.2
+        elif sec["folder"].startswith("05_"):
+            score += 0.35
+        elif sec["folder"].startswith("06_"):
+            score += 0.35
 
         if sec["rel_path"] in always_include_paths:
             score += 100.0
@@ -626,8 +643,8 @@ def llamar_gemini_con_rotacion_y_reintento(model_name, contents, config=None, ma
 
 
 LEGAL_DISCLAIMER_PDF = (
-    "Orientación jurídica automatizada basada en la normativa española vigente. "
-    "No sustituye el asesoramiento de un abogado colegiado para procedimientos judiciales."
+    "Orientación jurídica, fiscal y financiera automatizada basada en la normativa española vigente. "
+    "No sustituye el asesoramiento personalizado de un abogado colegiado, asesor fiscal o entidad financiera."
 )
 
 
@@ -1099,13 +1116,13 @@ def get_chat_response(
     local_resources_str = json.dumps(multimedia_index, ensure_ascii=False) if multimedia_index else "No hay recursos locales disponibles."
     system_instruction = system_instruction.replace("{multimedia_index_placeholder}", local_resources_str)
 
-    # Reglas técnicas de búsqueda externa alineadas con la Regla 5 del Asesor Legal Inmobiliario
+    # Reglas técnicas de búsqueda externa válidas para TODOS los ámbitos del asistente
     external_hint = (
-        "\n\n[MECANISMO DE BÚSQUEDA EXTERNA DE VÍDEOS — OPCIONAL Y ESTRICTO]\n"
+        "\n\n[MECANISMO DE BÚSQUEDA EXTERNA DE VÍDEOS — TODOS LOS ÁMBITOS INMOBILIARIOS]\n"
         "- Nunca inventes URLs ni incluyas vídeos durante la Fase 1 (triaje).\n"
-        "- En la Fase 3, solo si un vídeo explicativo aporta valor claro sobre derecho de arrendamientos urbanos en España, puedes incluir al final el bloque `[RESOURCES]` con un JSON válido.\n"
-        "- Si el tema afecta a subidas de renta, prórrogas, alquiler temporal o alquiler de habitaciones, utiliza `\"url\": \"SEARCH_EXTERNAL_POST_OCT2026: <consulta en español sobre alquiler España>\"` para exigir vídeos publicados después de octubre de 2026.\n"
-        "- Para otros temas de arrendamientos en España (ej. fianza, obras, comunidad), puedes usar `\"url\": \"SEARCH_EXTERNAL: <consulta en español sobre alquiler España>\"`.\n"
+        "- En la Fase 3 (o si el usuario pide profundizar u oír a un especialista), puedes incluir al final el bloque `[RESOURCES]` con un JSON válido para cualquier ámbito del asistente en España: derecho de arrendamientos (LAU/LPH/LEC), fiscalidad inmobiliaria (IRPF/ITP/amortización), financiación e hipotecas (LCCI/CIRBE/DTI) o estrategia de inversión (rentabilidad/ROCE/mercado).\n"
+        "- Si el vídeo trata sobre subidas de renta, prórrogas, alquiler temporal o alquiler de habitaciones, utiliza `\"url\": \"SEARCH_EXTERNAL_POST_OCT2026: <consulta en español>\"` para exigir vídeos publicados después de octubre de 2026.\n"
+        "- Para el resto de temas (fiscalidad IRPF/ITP, hipotecas LCCI, financiación/CIRBE, inversión/ROCE, fianza, obras, comunidad), utiliza `\"url\": \"SEARCH_EXTERNAL: <consulta precisa en español>\"`.\n"
         "- Si no es necesario un vídeo o no existe ninguno actualizado, omite completamente el bloque `[RESOURCES]`."
     )
 
@@ -1252,10 +1269,14 @@ def get_chat_response(
                                 recommendations.extend(external_results)
                         elif isinstance(url, str) and "SEARCH_EXTERNAL:" in url:
                             query = url.split("SEARCH_EXTERNAL:", 1)[1].strip()
+                            # Aplicar filtro post-octubre 2026 solo si la consulta del vídeo toca esas materias reformadas
+                            query_needs_post_oct = bool(
+                                requiere_video_post_oct_2026 and requiere_video_post_oct_2026(query)
+                            )
                             external_results = (
                                 buscar_youtube_externo(
                                     query,
-                                    solo_post_oct_2026=(True if needs_post_oct_2026 else None),
+                                    solo_post_oct_2026=query_needs_post_oct,
                                     contexto_consulta=recent_user_context,
                                 )
                                 if buscar_youtube_externo else None
@@ -1344,14 +1365,14 @@ def generate_dynamic_topics(knowledge_context):
     )
     
     prompt = f"""
-    Analiza la siguiente documentación sobre derecho de arrendamientos urbanos en España y extrae una lista de 5 a 8 temas principales sobre los que se podría evaluar a un propietario particular.
-    Los temas deben ser breves, descriptivos y cubrir diferentes documentos/normas presentes en la base documental (LAU, Ley 12/2023, RDL 29/2026, Código Civil, LEC desahucios, LPH, fianzas, etc.).
+    Analiza la siguiente documentación sobre derecho de arrendamientos urbanos, fiscalidad inmobiliaria (IRPF/ITP), financiación hipotecaria (LCCI/CIRBE) y estrategia de inversión inmobiliaria en España, y extrae una lista de 6 a 10 temas principales sobre los que se podría evaluar a propietarios, inversores o entidades.
+    Los temas deben ser breves, descriptivos y cubrir diferentes carpetas/normas presentes en la base documental (LAU, Ley 12/2023, RDL 29/2026, Código Civil, LEC, LPH, IRPF alquileres, ITP/AJD compra, LCCI hipotecas, financiación/CIRBE y rentabilidad/estrategia de inversión).
     
     CONTENIDO (Muestra de todos los documentos):
     {sampled_context} 
     
     Responde ÚNICAMENTE con un JSON válido que sea una lista de strings.
-    Ejemplo: ["Duración y prórrogas (LAU y RDL 29/2026)", "Actualización de renta e IRAV", "Fianza y liquidación", "Alquiler temporal y habitaciones", "Desahucios por impago (LEC)"]
+    Ejemplo: ["Duración y prórrogas (persona física vs. jurídica)", "Actualización de renta e IRAV", "IRPF del alquiler: gastos, amortización 3% y reducciones", "ITP y valor de referencia en la compra", "Hipotecas (LCCI), DTI y riesgo CIRBE", "Rentabilidad neta, ROCE y estrategia de inversión"]
     """
     
     try:

@@ -124,18 +124,80 @@ def buscar_biblioteca_local(tema: str, solo_post_oct_2026: Optional[bool] = None
     return output
 
 
+def _clasificar_tematica_inmobiliaria(texto: str) -> str:
+    """
+    Detecta la temática principal de la consulta para enriquecer la búsqueda de YouTube
+    en línea con todos los dominios del asistente: legal, fiscalidad, financiación e inversión.
+    """
+    norm = _normalizar_texto(texto)
+
+    claves_fiscal = (
+        "irpf", "itp", "ajd", "impuesto", "impuestos", "hacienda", "aeat", "amortizacion",
+        "deducir", "deducible", "reduccion", "base imponible", "valor de referencia",
+        "tributar", "tributacion", "declaracion renta", "sociedades", "iva compra", "fiscal"
+    )
+    claves_financiacion = (
+        "hipoteca", "hipotecario", "lcci", "fein", "fiae", "cirbe", "dti", "ltv",
+        "endeudamiento", "prestamo", "apalancamiento", "financiacion", "banco",
+        "euribor", "cuota hipoteca", "amortizacion anticipada", "subrogacion", "tasacion"
+    )
+    claves_inversion = (
+        "inversion", "invertir", "rentabilidad", "roce", "cash flow", "cash-flow",
+        "ticket bajo", "patrimonial", "comprar para alquilar", "mercado inmobiliario",
+        "estrategia inmobiliaria", "revalorizacion", "liquidez", "comprar piso"
+    )
+
+    score_fiscal = sum(1 for k in claves_fiscal if k in norm)
+    score_fin = sum(1 for k in claves_financiacion if k in norm)
+    score_inv = sum(1 for k in claves_inversion if k in norm)
+
+    scores = [
+        ("fiscalidad", score_fiscal),
+        ("financiacion", score_fin),
+        ("inversion", score_inv),
+    ]
+    best_cat, best_score = max(scores, key=lambda x: x[1])
+    return best_cat if best_score > 0 else "legal"
+
+
+def _construir_query_youtube(tema: str, contexto_consulta: str = "") -> tuple:
+    """Devuelve (query_enriquecida, etiqueta_dominio) adaptada al ámbito real de la consulta."""
+    categoria = _clasificar_tematica_inmobiliaria(f"{tema} {contexto_consulta}")
+    if categoria == "fiscalidad":
+        return (
+            f"{tema} (fiscalidad inmobiliaria España | impuestos alquiler vivienda España | asesor fiscal España)",
+            "fiscalidad inmobiliaria en España",
+        )
+    if categoria == "financiacion":
+        return (
+            f"{tema} (hipoteca España | financiación inmobiliaria España | ley hipotecaria España)",
+            "financiación e hipotecas en España",
+        )
+    if categoria == "inversion":
+        return (
+            f"{tema} (inversión inmobiliaria España | rentabilidad alquiler España | mercado inmobiliario España)",
+            "estrategia de inversión inmobiliaria en España",
+        )
+    return (
+        f"{tema} (alquiler España | LAU | arrendamientos urbanos | abogado inmobiliario España)",
+        "normativa española de arrendamientos e inmuebles",
+    )
+
+
 def buscar_youtube_externo(
     tema: str,
     solo_post_oct_2026: Optional[bool] = None,
     contexto_consulta: str = ""
 ) -> Union[str, List[Dict[str, str]]]:
     """
-    Realiza una búsqueda en YouTube alineada con el derecho de arrendamientos urbanos en España.
+    Realiza una búsqueda en YouTube válida para TODOS los ámbitos del asistente en España:
+    derecho de arrendamientos (LAU/LPH/LEC), fiscalidad (IRPF/ITP), financiación (LCCI/CIRBE)
+    y estrategia de inversión inmobiliaria (rentabilidad/ROCE).
     Si el tema afecta a subidas de renta, prórrogas, alquiler temporal o habitaciones,
     restringe estrictamente los resultados a vídeos publicados después de octubre de 2026.
 
     Args:
-        tema (str): El tema jurídico inmobiliario a buscar.
+        tema (str): El tema inmobiliario, fiscal, financiero o de inversión a buscar.
         solo_post_oct_2026 (Optional[bool]): Fuerza o desactiva el filtro de fecha posterior a octubre 2026.
         contexto_consulta (str): Texto adicional de la consulta del usuario para detectar materias sensibles.
 
@@ -161,16 +223,14 @@ def buscar_youtube_externo(
     filtrar_fecha = (
         solo_post_oct_2026
         if solo_post_oct_2026 is not None
-        else requiere_video_post_oct_2026(f"{tema} {contexto_consulta}")
+        else requiere_video_post_oct_2026(tema)
     )
 
     try:
         youtube = build('youtube', 'v3', developerKey=api_key)
         
-        # Enriquecemos la query para derecho de arrendamientos urbanos en España
-        query_enriquecida = (
-            f"{tema} (alquiler España | LAU | arrendamientos urbanos | derecho inmobiliario España)"
-        )
+        # Enriquecemos la query según la temática exacta (legal, fiscalidad, financiación o inversión)
+        query_enriquecida, etiqueta_dominio = _construir_query_youtube(tema, contexto_consulta)
         
         search_params = {
             "part": "snippet",
@@ -213,7 +273,7 @@ def buscar_youtube_externo(
             resultados.append({
                 "title": f"{title} ({channel}){fecha_txt}",
                 "url": url,
-                "reason": f"Vídeo explicativo actualizado sobre '{tema}' en normativa española de alquiler."
+                "reason": f"Vídeo explicativo de especialista sobre '{tema}' ({etiqueta_dominio})."
             })
 
             if len(resultados) >= 2:

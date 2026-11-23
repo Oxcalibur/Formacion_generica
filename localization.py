@@ -4,25 +4,25 @@ import streamlit as st
 TRANSLATIONS = {
     "es": {
         # General
-        "app_title": "Asesor Legal Inmobiliario",
+        "app_title": "Asesor Inmobiliario Integral",
         "sidebar_title": "Navegación",
-        "nav_assistant": "Asesor Legal Inmobiliario",
-        "nav_dojo": "Dojo Legal (Ponerse a prueba)",
+        "nav_assistant": "Asesor Inmobiliario Integral",
+        "nav_dojo": "Dojo Inmobiliario (Ponerse a prueba)",
         "nav_roi": "ROI Dashboard (Admin)",
         "nav_users": "Gestión de Usuarios (Admin)",
         "nav_prompts": "Registro de Prompts (Admin)",
         "language_selector_label": "Idioma",
 
         # Login
-        "login_title": "⚖️ Acceso al Asesor Legal Inmobiliario",
+        "login_title": "⚖️ Acceso al Asesor Inmobiliario Integral",
         "login_user": "Usuario",
         "login_password": "Contraseña",
         "login_button": "Entrar",
         "login_error": "Credenciales incorrectas",
 
         # Sidebar
-        "sidebar_role_expander": "👤 Perfil de Propietario",
-        "sidebar_role_input": "Perfil (ej. Pequeño tenedor, Propietario particular)",
+        "sidebar_role_expander": "👤 Mi Perfil",
+        "sidebar_role_input": "Perfil (ej. Persona física, Sociedad/SL, Inversor)",
         "sidebar_role_button": "Guardar Perfil",
         "sidebar_password_expander": "🔐 Cambiar Contraseña",
         "sidebar_password_new": "Nueva contraseña",
@@ -30,7 +30,7 @@ TRANSLATIONS = {
         "sidebar_password_update_button": "Actualizar",
         "sidebar_password_mismatch": "Las contraseñas no coinciden.",
         "sidebar_logout_button": "Cerrar Sesión",
-        "sidebar_kb_connected": "📚 Base documental legal conectada",
+        "sidebar_kb_connected": "📚 Base documental conectada",
         "sidebar_kb_empty": "⚠️ Base documental vacía",
         "sidebar_level_title": "🥋 Nivel Actual",
         "sidebar_points": "Puntos",
@@ -39,11 +39,11 @@ TRANSLATIONS = {
         "sidebar_max_level": "¡Máximo nivel alcanzado!",
 
         # Asistente
-        "assistant_welcome": "⚖️ Asesor Legal Inmobiliario — {user_role}",
-        "assistant_caption": "Orientación legal en arrendamientos urbanos en España (LAU, Ley 12/2023, RDL 29/2026, CC, LEC y LPH).",
-        "assistant_input_placeholder": "Describe tu consulta sobre alquiler, contrato, renta, fianza o prórroga...",
-        "assistant_thinking": "Consultando normativa y base documental...",
-        "assistant_welcome_msg": "Hola, soy tu **{client_name}**, especialista en derecho de arrendamientos urbanos en España. Cuéntame qué consulta o situación tienes con tu vivienda o contrato de alquiler y te ayudaré paso a paso.",
+        "assistant_welcome": "⚖️ Asesor Inmobiliario Integral — {user_role}",
+        "assistant_caption": "Asesoramiento legal (LAU, Ley 12/2023, RDL 29/2026), fiscal (IRPF, ITP), financiación (LCCI, CIRBE) y estrategia de inversión en España.",
+        "assistant_input_placeholder": "Pregunta sobre alquileres, contratos, impuestos (IRPF/ITP), hipotecas o estrategia de inversión...",
+        "assistant_thinking": "Consultando normativa legal, fiscal, financiación y estrategia...",
+        "assistant_welcome_msg": "Hola, soy tu **{client_name}**. Puedo ayudarte —tanto si actúas como persona física como si eres una empresa o entidad— con derecho de alquileres, fiscalidad (IRPF/ITP), hipotecas y financiación, o estrategia de inversión inmobiliaria en España. ¿En qué situación o decisión te ayudo hoy?",
         "doc_uploader_title": "📎 Adjuntar contrato o documento (solo para esta conversación)",
         "doc_privacy_note": "🔒 Privacidad: el documento se lee únicamente en memoria para esta consulta y NO se guarda ni se conserva para futuras conversaciones.",
         "doc_uploader_label": "Sube tu contrato, anexo, burofax o foto (PDF, Word, TXT o imagen)",
@@ -76,25 +76,25 @@ TRANSLATIONS = {
     },
     "en": {
         # General
-        "app_title": "Real Estate Legal Advisor",
+        "app_title": "Comprehensive Real Estate Advisor",
         "sidebar_title": "Navigation",
-        "nav_assistant": "Real Estate Legal Advisor",
-        "nav_dojo": "Legal Dojo (Test yourself)",
+        "nav_assistant": "Real Estate Advisor",
+        "nav_dojo": "Real Estate Dojo (Test yourself)",
         "nav_roi": "ROI Dashboard (Admin)",
         "nav_users": "User Management (Admin)",
         "nav_prompts": "Prompt Log (Admin)",
         "language_selector_label": "Language",
 
         # Login
-        "login_title": "⚖️ Real Estate Legal Advisor Access",
+        "login_title": "⚖️ Real Estate Advisor Access",
         "login_user": "Username",
         "login_password": "Password",
         "login_button": "Login",
         "login_error": "Incorrect credentials",
 
         # Sidebar
-        "sidebar_role_expander": "👤 Landlord Profile",
-        "sidebar_role_input": "Profile (e.g. Individual landlord, Small holder)",
+        "sidebar_role_expander": "👤 My Profile",
+        "sidebar_role_input": "Profile (e.g. Individual, Company/SL, Investor)",
         "sidebar_role_button": "Save Profile",
         "sidebar_password_expander": "🔐 Change Password",
         "sidebar_password_new": "New password",
@@ -102,8 +102,8 @@ TRANSLATIONS = {
         "sidebar_password_update_button": "Update",
         "sidebar_password_mismatch": "Passwords do not match.",
         "sidebar_logout_button": "Logout",
-        "sidebar_kb_connected": "📚 Legal knowledge base connected",
-        "sidebar_kb_empty": "⚠️ Legal knowledge base empty",
+        "sidebar_kb_connected": "📚 Knowledge base connected",
+        "sidebar_kb_empty": "⚠️ Knowledge base empty",
         "sidebar_level_title": "🥋 Current Level",
         "sidebar_points": "Points",
         "sidebar_sessions": "Sessions",
@@ -111,11 +111,11 @@ TRANSLATIONS = {
         "sidebar_max_level": "Maximum level reached!",
 
         # Assistant, Dojo, etc.
-        "assistant_welcome": "⚖️ Real Estate Legal Advisor — {user_role}",
-        "assistant_caption": "Legal guidance on Spanish urban tenancy law (LAU, Law 12/2023, RDL 29/2026, Civil Code, LEC & LPH).",
-        "assistant_input_placeholder": "Describe your rental, contract, rent update, deposit or extension question...",
-        "assistant_thinking": "Consulting Spanish tenancy regulations and legal documents...",
-        "assistant_welcome_msg": "Hello, I'm your **{client_name}**, specialized in Spanish urban tenancy law. Tell me about your rental property or lease question and I'll guide you step by step.",
+        "assistant_welcome": "⚖️ Comprehensive Real Estate Advisor — {user_role}",
+        "assistant_caption": "Spanish real estate guidance: tenancy law (LAU, RDL 29/2026), taxation (IRPF, ITP), mortgages (LCCI, CIRBE) & investment strategy.",
+        "assistant_input_placeholder": "Ask about leases, taxes (IRPF/ITP), mortgages, financing or real estate investment strategy...",
+        "assistant_thinking": "Consulting legal, tax, financing and investment knowledge base...",
+        "assistant_welcome_msg": "Hello, I'm your **{client_name}**. Whether you act as an individual or a company/entity, I can help you with Spanish tenancy law, real estate taxation (IRPF/ITP), mortgages & financing, and investment strategy. How can I help you today?",
         "doc_uploader_title": "📎 Attach contract or document (this conversation only)",
         "doc_privacy_note": "🔒 Privacy: your document is read strictly in memory for this chat and is NOT saved or kept for future conversations.",
         "doc_uploader_label": "Upload your lease, addendum, notice or photo (PDF, Word, TXT or image)",

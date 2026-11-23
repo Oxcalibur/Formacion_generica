@@ -22,7 +22,7 @@ apply_custom_styles()
 
 # --- Inicialización de Estado ---
 if "user_role" not in st.session_state:
-    st.session_state.user_role = "Propietario particular"
+    st.session_state.user_role = "Propietario / Inversor"
 if "score" not in st.session_state:
     st.session_state.score = 0
 if "active_sessions" not in st.session_state:
@@ -102,7 +102,7 @@ with st.sidebar:
             st.rerun()
 
         with st.expander(get_text("sidebar_role_expander")):
-            current_role = st.session_state.get("user_role", "Propietario particular")
+            current_role = st.session_state.get("user_role", "Propietario / Inversor")
             new_role = st.text_input(get_text("sidebar_role_input"), value=current_role)
             if st.button(get_text("sidebar_role_button")):
                 if auth_manager.update_user_job_role(st.session_state.username, new_role):
@@ -178,7 +178,7 @@ if mode == get_text("nav_assistant"):
 
     # Inicializar conversación si está vacía
     if not st.session_state.chat_history:
-        current_role = st.session_state.get("user_role", "Propietario particular")
+        current_role = st.session_state.get("user_role", "Propietario / Inversor")
         welcome_msg = get_text("assistant_welcome_msg").format(
             client_name=CLIENT_CONFIG['client_name'],
             user_role=current_role
@@ -306,13 +306,14 @@ if mode == get_text("nav_assistant"):
             ).replace(
                 "{multimedia_index_placeholder}", json.dumps(local_resources, ensure_ascii=False) if local_resources else "[]"
             )
-            current_role = st.session_state.get("user_role", "Propietario particular")
+            current_role = st.session_state.get("user_role", "Propietario / Inversor")
             role_context = (
-                f"\n\nCONTEXTO DEL USUARIO:\nPerfil declarado en la plataforma: {current_role}\n"
-                "INSTRUCCIÓN: Aplica el árbol de decisión condicional: pregunta solo 1-2 datos relevantes para la situación concreta, "
-                "permitiendo responder por texto o sugerir subir un documento concreto si lo tiene a mano (sin obligar). "
+                f"\n\nCONTEXTO DE PERFIL EN LA PLATAFORMA (solo orientativo, NO asumir titularidad legal): {current_role}\n"
+                "INSTRUCCIÓN CRÍTICA: CERO ASUNCIONES. Nunca presupongas si el usuario actúa como persona física o persona jurídica (sociedad/entidad), "
+                "ni su régimen fiscal, ni su situación contractual: confírmalo cuando cambie la ley, la fiscalidad o la financiación. "
+                "Aplica el árbol de decisión condicional (1-2 preguntas pertinentes por turno, permitiendo contestar por texto o subir un documento concreto si lo tiene a mano). "
                 "NUNCA preguntes si es gran tenedor en consultas de subida de renta o nuevo contrato si la vivienda NO está en zona tensionada. "
-                "Verifica y muestra explícitamente la aritmética de fechas (5 años persona física / 7 persona jurídica) y aporta siempre alternativas legales estratégicas además de los límites."
+                "Verifica y muestra explícitamente los cálculos de fechas, fiscalidad o rentabilidad y aporta siempre alternativas estratégicas."
             )
             full_prompt = base_prompt + role_context
             
