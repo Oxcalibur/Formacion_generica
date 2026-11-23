@@ -131,6 +131,65 @@ def _tokenize_search(text: str) -> List[str]:
     return [t for t in raw_tokens if len(t) >= 2 and t not in SPANISH_STOPWORDS]
 
 
+# Mapa de expansión semántica (lenguaje cotidiano del usuario -> terminología legal/fiscal exacta en knowledge_base)
+LEGAL_QUERY_EXPANSIONS = [
+    (
+        ("echar", "no renovar", "no renovarle", "renovarle", "renovar", "finalizar", "terminar", "vence", "vencimiento", "prorroga", "necesidad", "hija", "hijo", "familiar", "5 anos", "7 anos"),
+        "articulo 9 articulo 10 plazo minimo prorroga obligatoria necesidad familiares primer grado preaviso cuatro meses rdl 29/2026",
+    ),
+    (
+        ("subir", "subida", "actualizar", "actualizacion", "ipc", "irav", "renta", "adenda", "novacion", "tope"),
+        "articulo 17 articulo 18 articulo 19 articulo 6 determinacion renta actualizacion irav indice referencia obras mejora",
+    ),
+    (
+        ("sin pagar", "no paga", "impago", "impagos", "debe", "deuda", "desahucio", "burofax", "enervar", "enervacion", "moroso"),
+        "articulo 27 articulo 1569 articulo 22 articulo 439 articulo 440 articulo 441 desahucio falta pago resolucion enervacion conciliacion intermediacion vulnerabilidad",
+    ),
+    (
+        ("fianza", "devolver", "devolucion", "danos", "desperfectos", "garantia adicional", "llaves"),
+        "articulo 36 fianza garantia adicional devolucion mensualidad organismo autonomico",
+    ),
+    (
+        ("marcha", "irse", "antes de tiempo", "desistir", "desistimiento", "penalizacion", "indemnizacion", "6 meses", "mes 6"),
+        "articulo 11 desistimiento arrendatario seis meses indemnizacion",
+    ),
+    (
+        ("habitacion", "habitaciones", "temporada", "temporal", "subarriendo", "cesion"),
+        "articulo 2 articulo 3 articulo 8 articulo 17 vivienda temporal habitaciones cesion subarriendo rdl 29/2026",
+    ),
+    (
+        ("obra", "obras", "reparacion", "reparaciones", "caldera", "averia", "goteras", "conservacion", "mejora"),
+        "articulo 21 articulo 22 articulo 23 articulo 19 conservacion vivienda pequenas reparaciones obras mejora",
+    ),
+    (
+        ("comunidad", "vecinos", "derrama", "junta", "propietarios", "turistico", "estatutos"),
+        "propiedad horizontal junta propietarios derrama vivienda uso turistico",
+    ),
+    (
+        ("irpf", "declarar", "renta", "hacienda", "deducir", "deducible", "amortizacion", "reduccion", "impuestos alquiler", "sociedades"),
+        "articulo 21 articulo 22 articulo 23 articulo 13 articulo 14 lirpf rendimientos capital inmobiliario amortizacion 3 por ciento reduccion",
+    ),
+    (
+        ("itp", "ajd", "comprar", "compra", "valor de referencia", "escritura", "impuestos compra", "gastos compra"),
+        "articulo 7 articulo 10 itp ajd valor referencia catastro tabla itp gastos compra",
+    ),
+    (
+        ("hipoteca", "prestamo", "fein", "cirbe", "dti", "ltv", "apalancamiento", "banco", "financiacion", "inversion", "rentabilidad", "roce"),
+        "articulo 14 articulo 23 lcci fein gastos hipoteca cirbe dti ltv apalancamiento rentabilidad roce framework",
+    ),
+]
+
+
+def _expand_query_with_legal_terms(query_text: str) -> str:
+    """Expande lenguaje cotidiano del usuario hacia los artículos y términos exactos de la normativa."""
+    norm = _normalize_search_text(query_text)
+    extra = []
+    for triggers, expansion in LEGAL_QUERY_EXPANSIONS:
+        if any(t in norm for t in triggers):
+            extra.append(expansion)
+    return f"{query_text} {' '.join(extra)}" if extra else query_text
+
+
 def _extract_article_refs(text: str) -> List[str]:
     """Detecta referencias explícitas a artículos o normas (ej. 'art 11', '29/2026', '1566')."""
     norm = _normalize_search_text(text)
@@ -315,12 +374,12 @@ def retrieve_relevant_knowledge(
     folder_path: str,
     query: str,
     history: Optional[list] = None,
-    max_chars: int = 90000,
+    max_chars: int = 130000,
 ) -> str:
     """
     Recupera contexto documental relevante recorriendo TODAS las carpetas de knowledge_base
-    (01_Normativa_Estatal_Vigente, 02_Jurisprudencia_y_Criterios, 03_Plantillas_Accionables,
-    04_Datos_Volatiles_y_CCAA), evitando truncamientos ciegos.
+    (01_Normativa_Estatal_Vigente a 06_Estrategia_Inversion_y_Mercado), usando expansión
+    semántica legal para que el lenguaje cotidiano recupere siempre los artículos exactos.
     """
     kb_data = load_knowledge_base_structured(folder_path)
     if not kb_data["documents"]:
@@ -336,12 +395,13 @@ def retrieve_relevant_knowledge(
         )
         return f"{inventory}\n\n{full_docs}"
 
-    # Combinar la consulta actual con los últimos mensajes del usuario (triaje + pregunta inicial)
+    # Combinar la consulta actual con los últimos mensajes del usuario y expandir términos legales
     user_texts = [query or ""]
     if history:
         recent_user_msgs = [m.get("content", "") for m in history[-8:] if m.get("role") == "user"]
         user_texts.extend(recent_user_msgs[-4:])
-    combined_query = " ".join(user_texts)
+    raw_combined_query = " ".join(user_texts)
+    combined_query = _expand_query_with_legal_terms(raw_combined_query)
     query_tokens = _tokenize_search(combined_query)
     query_token_set = set(query_tokens)
     article_refs = _extract_article_refs(combined_query)
@@ -354,11 +414,14 @@ def retrieve_relevant_knowledge(
     section_token_sets: List[set] = []
     section_heading_sets: List[set] = []
     section_norms: List[str] = []
+    section_head_norms: List[str] = []
 
     for sec in sections:
+        head_norm = _normalize_search_text(f"{sec['heading']}\n{sec['doc_meta']}")
         sec_norm = _normalize_search_text(f"{sec['heading']}\n{sec['doc_meta']}\n{sec['text']}")
         sec_tokens = set(_tokenize_search(sec_norm))
-        head_tokens = set(_tokenize_search(f"{sec['folder']} {sec['rel_path']} {sec['heading']} {sec['doc_meta']}"))
+        head_tokens = set(_tokenize_search(f"{sec['folder']} {sec['rel_path']} {head_norm}"))
+        section_head_norms.append(head_norm)
         section_norms.append(sec_norm)
         section_token_sets.append(sec_tokens)
         section_heading_sets.append(head_tokens)
@@ -366,7 +429,7 @@ def retrieve_relevant_knowledge(
             doc_freq[tok] = doc_freq.get(tok, 0) + 1
 
     # Detectar intención de fiscalidad / financiación / inversión para priorizar 05_ y 06_
-    norm_combined_query = _normalize_search_text(combined_query)
+    norm_combined_query = _normalize_search_text(raw_combined_query)
     fiscal_fin_inv_terms = (
         "irpf", "itp", "ajd", "impuesto", "amortizacion", "deducir", "deducible",
         "reduccion", "base imponible", "valor de referencia", "hipoteca", "lcci",
@@ -376,8 +439,8 @@ def retrieve_relevant_knowledge(
     )
     is_fiscal_fin_inv = any(term in norm_combined_query for term in fiscal_fin_inv_terms)
 
-    # Documentos compactos clave (<= 12 KB, ej. RDL 29/2026, guías de estrategia/IRPF/ITP/financiación, datos CCAA)
-    always_include_paths = {doc["rel_path"] for doc in kb_data["documents"] if doc["char_count"] <= 12000}
+    # Documentos compactos clave (<= 9 KB: RDL 29/2026, guías de estrategia/IRPF/ITP/financiación, datos CCAA)
+    always_include_paths = {doc["rel_path"] for doc in kb_data["documents"] if doc["char_count"] <= 9000}
 
     scored = []
     for idx, sec in enumerate(sections):
@@ -385,17 +448,21 @@ def retrieve_relevant_knowledge(
         sec_tokens = section_token_sets[idx]
         head_tokens = section_heading_sets[idx]
         sec_norm = section_norms[idx]
+        head_norm = section_head_norms[idx]
 
         for tok in query_token_set:
             if tok in sec_tokens:
                 idf = math.log((num_sections + 1) / (doc_freq.get(tok, 1) + 1)) + 1.0
                 score += idf
                 if tok in head_tokens:
-                    score += idf * 1.5
+                    score += idf * 1.8
 
         for ref in article_refs:
-            if ref in sec_norm:
-                score += 12.0
+            # Coincidencia exacta de número de artículo en el encabezado (ej. "### artículo 10" vs "artículo 100")
+            if re.search(rf"\b{re.escape(ref)}\b", head_norm):
+                score += 25.0
+            elif re.search(rf"\b{re.escape(ref)}\b", sec_norm):
+                score += 6.0
 
         # Bonificación contextual según carpeta documental (01_ a 06_)
         if is_fiscal_fin_inv and (sec["folder"].startswith("05_") or sec["folder"].startswith("06_")):
@@ -957,18 +1024,22 @@ def generate_pdf_bytes(title: str, markdown_text: str, include_disclaimer: bool 
 
 def _extract_generated_documents(text: str) -> tuple:
     """
-    Extrae bloques [DOCUMENT title="..."]...[/DOCUMENT] de la respuesta del modelo.
+    Extrae bloques [DOCUMENT title="..."]...[/DOCUMENT] de la respuesta del modelo,
+    limpiando posibles comillas invertidas (`) o bloques markdown (```) que el modelo añada alrededor.
     Devuelve (texto_limpio_para_chat, lista_de_documentos).
     """
     documents = []
     pattern = re.compile(
-        r'\[DOCUMENT(?:\s+title\s*=\s*"([^"]+)")?\s*\](.*?)\[/DOCUMENT\]',
+        r'(?:`{1,3}(?:markdown|md|text)?\s*\n?)?\[DOCUMENT(?:\s+title\s*=\s*"([^"]+)")?\s*\](.*?)\[/DOCUMENT\](?:\s*\n?`{1,3})?',
         flags=re.DOTALL | re.IGNORECASE,
     )
 
     def _replace_match(match):
         raw_title = (match.group(1) or "Documento_Legal").strip()
         doc_body = (match.group(2) or "").strip()
+        # Limpiar posibles backticks residuales al inicio/fin del contenido del documento
+        doc_body = re.sub(r'^`{1,3}(?:markdown|md|text)?\s*\n?', '', doc_body)
+        doc_body = re.sub(r'\n?`{1,3}\s*$', '', doc_body).strip()
         if not doc_body:
             return ""
         clean_title = raw_title.replace("_", " ").strip()
@@ -1624,10 +1695,10 @@ def get_chat_response(
             resolved_kb_folder,
             retrieval_query,
             history=history,
-            max_chars=90000,
+            max_chars=130000,
         )
     else:
-        contexto_seguro = knowledge_context[:90000] if knowledge_context else "No hay documentos cargados."
+        contexto_seguro = knowledge_context[:130000] if knowledge_context else "No hay documentos cargados."
 
     fecha_hoy_str = datetime.datetime.now().strftime("%d/%m/%Y")
     fecha_block = (
