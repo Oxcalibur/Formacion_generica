@@ -1523,13 +1523,13 @@ def log_user_prompt(
     role: str = "User",
     response_text: str = "",
     session_id: str = "",
-    doc_attached: bool = False,
+    doc_attached: Any = False,
     arquetipo: str = "",
 ):
     """
     Registra un turno completo de conversación (prompt + respuesta del asistente + session_id + arquetipo)
     en Google Sheets para auditoría y mejora de calidad (QA).
-    Nunca registra el contenido de documentos adjuntados por el usuario.
+    Nunca registra el contenido de documentos adjuntados por el usuario (solo 'Sí (nombre)' o 'No').
     """
     if GSheetsConnection is None:
         print("GSheetsConnection no disponible. Saltando registro de conversación.")
@@ -1539,6 +1539,13 @@ def log_user_prompt(
         return
 
     target_cols = ["session_id", "timestamp", "role", "arquetipo", "prompt", "response", "doc_attached"]
+
+    if isinstance(doc_attached, str) and doc_attached.strip():
+        doc_flag = f"Sí ({doc_attached.strip()})" if doc_attached.strip() not in ("Sí", "No") else doc_attached.strip()
+    elif doc_attached:
+        doc_flag = "Sí"
+    else:
+        doc_flag = "No"
 
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -1552,7 +1559,7 @@ def log_user_prompt(
                 "arquetipo": arquetipo or "",
                 "prompt": prompt_text,
                 "response": (response_text or "")[:15000],
-                "doc_attached": "Sí" if doc_attached else "No",
+                "doc_attached": doc_flag,
             }
         ])
 

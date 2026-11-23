@@ -153,14 +153,33 @@ class AuthManager:
         return list(data.keys())
 
     def get_user_profile(self, username):
-        """Obtiene el perfil completo del usuario (progreso y rol)."""
+        """Obtiene el perfil completo del usuario (progreso y rol), protegiendo contra celdas vacías/NaN."""
         data = self._load_db()
         user = data.get(username, {})
+
+        def _clean_str(val, default):
+            if val is None or pd.isna(val):
+                return default
+            txt = str(val).strip()
+            return txt if txt else default
+
+        def _clean_int(val, default=0):
+            if val is None or pd.isna(val):
+                return default
+            try:
+                return int(float(val))
+            except (ValueError, TypeError):
+                return default
+
+        raw_lang = _clean_str(user.get("language"), "es").lower()
+        if raw_lang not in ("es", "en"):
+            raw_lang = "es"
+
         return {
-            "score": user.get("score", 0),
-            "active_sessions": user.get("active_sessions", 0),
-            "job_role": user.get("job_role", "Propietario / Inversor"),
-            "language": user.get("language", "es")
+            "score": _clean_int(user.get("score"), 0),
+            "active_sessions": _clean_int(user.get("active_sessions"), 0),
+            "job_role": _clean_str(user.get("job_role"), "Propietario / Inversor"),
+            "language": raw_lang
         }
 
     def update_user_job_role(self, username, job_role):

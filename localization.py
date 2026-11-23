@@ -33,6 +33,7 @@ TRANSLATIONS = {
         "sidebar_kb_connected": "📚 Base documental conectada",
         "sidebar_kb_empty": "⚠️ Base documental vacía",
         "sidebar_profile_memory_expander": "🧠 Perfil detectado en esta sesión",
+        "sidebar_quick_profile_title": "🎯 Perfil rápido (opcional)",
         "sidebar_level_title": "🥋 Nivel Actual",
         "sidebar_points": "Puntos",
         "sidebar_sessions": "Sesiones",
@@ -106,6 +107,7 @@ TRANSLATIONS = {
         "sidebar_kb_connected": "📚 Knowledge base connected",
         "sidebar_kb_empty": "⚠️ Knowledge base empty",
         "sidebar_profile_memory_expander": "🧠 Session profile detected",
+        "sidebar_quick_profile_title": "🎯 Quick profile (optional)",
         "sidebar_level_title": "🥋 Current Level",
         "sidebar_points": "Points",
         "sidebar_sessions": "Sessions",
@@ -150,7 +152,10 @@ TRANSLATIONS = {
 }
 
 def get_text(key):
-    """Obtiene el texto traducido para una clave dada, usando el idioma de la sesión."""
-    lang = st.session_state.get("language", "es")
+    """Obtiene el texto traducido para una clave dada, con fallback seguro a 'es' ante valores vacíos/NaN."""
+    raw_lang = st.session_state.get("language", "es")
+    lang = str(raw_lang).strip().lower() if raw_lang is not None else "es"
+    if lang not in TRANSLATIONS:
+        lang = "es"
     # Devolver la clave como fallback si no se encuentra la traducción
-    return TRANSLATIONS.get(lang, {}).get(key, key)
+    return TRANSLATIONS.get(lang, TRANSLATIONS["es"]).get(key, key)

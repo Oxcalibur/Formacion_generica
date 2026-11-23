@@ -91,11 +91,16 @@ with st.sidebar:
     if st.session_state.get("logged_in"):
         st.caption(f"{get_text('login_user')}: {st.session_state.username}")
         
-        # Selector de idioma
-        selected_lang_index = list(TRANSLATIONS.keys()).index(st.session_state.language)
+        # Selector de idioma (con fallback seguro si el usuario tiene celda vacía/NaN en Sheets)
+        lang_keys = list(TRANSLATIONS.keys())
+        safe_lang = str(st.session_state.get("language") or "es").strip().lower()
+        if safe_lang not in TRANSLATIONS:
+            safe_lang = "es"
+            st.session_state.language = "es"
+        selected_lang_index = lang_keys.index(safe_lang)
         new_lang = st.selectbox(
             get_text("language_selector_label"), 
-            options=list(TRANSLATIONS.keys()), 
+            options=lang_keys, 
             format_func=lambda lang: {"es": "Español", "en": "English"}.get(lang, lang),
             index=selected_lang_index
         )
@@ -139,6 +144,64 @@ with st.sidebar:
         st.success(get_text("sidebar_kb_connected"))
     else:
         st.warning(get_text("sidebar_kb_empty"))
+
+    # Perfilado rápido opcional desde el turno 1 (sin asunciones por defecto)
+    with st.expander(get_text("sidebar_quick_profile_title"), expanded=False):
+        st.caption("Opcional: define tu perfil base para respuestas directas desde el primer mensaje.")
+        qp_titularidad = st.selectbox(
+            "Titularidad",
+            ["Sin definir", "Persona física", "Sociedad / Empresa (SL/SA)", "Comunidad de bienes"],
+            key=f"qp_tit_{st.session_state.chat_session_id}",
+        )
+        qp_viviendas = st.selectbox(
+            "Viviendas residenciales en toda España (incl. habitual)",
+            ["Sin definir", "1 a 4 (y <=1.500 m2)", "5 a 10 (y <=1.500 m2)", "11 o más (o >1.500 m2)"],
+            key=f"qp_viv_{st.session_state.chat_session_id}",
+        )
+        qp_ccaa = st.selectbox(
+            "CCAA del inmueble",
+            [
+                "Sin definir", "Andalucía", "Aragón", "Asturias", "Canarias", "Cantabria",
+                "Castilla-La Mancha", "Castilla y León", "Cataluña", "Comunidad de Madrid",
+                "Comunidad Valenciana", "Extremadura", "Galicia", "Illes Balears", "La Rioja",
+                "Navarra", "País Vasco", "Región de Murcia", "Ceuta / Melilla",
+            ],
+            key=f"qp_ccaa_{st.session_state.chat_session_id}",
+        )
+        qp_residente = st.selectbox(
+            "Residencia fiscal",
+            ["Sin definir", "Residente en España", "No residente (extranjero)"],
+            key=f"qp_res_{st.session_state.chat_session_id}",
+        )
+
+        # Sincronizar selecciones explícitas en la memoria de sesión (solo si el usuario eligió algo)
+        mem = st.session_state.user_profile_memory
+        tit_map = {
+            "Persona física": "persona_fisica",
+            "Sociedad / Empresa (SL/SA)": "persona_juridica",
+            "Comunidad de bienes": "comunidad_bienes",
+        }
+        if qp_titularidad in tit_map:
+            mem["titularidad"] = tit_map[qp_titularidad]
+        if qp_ccaa != "Sin definir":
+            mem["ubicacion_inmueble_ccaa"] = qp_ccaa
+        if qp_residente == "Residente en España":
+            mem["no_residente"] = False
+        elif qp_residente == "No residente (extranjero)":
+            mem["no_residente"] = True
+        if qp_viviendas == "11 o más (o >1.500 m2)":
+            mem["gran_tenedor"] = True
+        elif qp_viviendas == "1 a 4 (y <=1.500 m2)":
+            mem["gran_tenedor"] = False
+
+        # Inferir arquetipo inicial solo cuando los datos seleccionados son inequívocos
+        if not mem.get("arquetipo_detectado"):
+            if mem.get("no_residente") is True:
+                mem["arquetipo_detectado"] = "inversor_no_residente"
+            elif mem.get("titularidad") == "persona_juridica":
+                mem["arquetipo_detectado"] = "sociedad_inmobiliaria"
+            elif mem.get("titularidad") == "persona_fisica" and mem.get("gran_tenedor") is True:
+                mem["arquetipo_detectado"] = "gran_tenedor_particular"
 
     # Memoria de perfil detectado en la conversación actual (visible solo cuando tiene datos confirmados)
     mem_profile = st.session_state.get("user_profile_memory", {})
@@ -369,17 +432,19 @@ if mode == get_text("nav_assistant"):
             if response_data.get("updated_profile"):
                 st.session_state.user_profile_memory = response_data["updated_profile"]
 
-        # Registrar turno completo (prompt + respuesta + session_id + arquetipo) en Google Sheets para QA (sin guardar el contrato adjunto)
+        # Registrar turno completo (prompt + respuesta + session_id + arquetipo + nombre de doc si aplica) en Google Sheets para QA
         if CLIENT_CONFIG.get("log_prompts", False):
             worksheet = CLIENT_CONFIG.get("prompts_worksheet_name")
             if worksheet:
+                active_doc_obj = st.session_state.get("ephemeral_doc")
+                doc_attached_label = active_doc_obj.get("name") if isinstance(active_doc_obj, dict) and active_doc_obj.get("name") else False
                 log_user_prompt(
                     prompt_final,
                     worksheet,
                     st.session_state.user_role,
                     response_text=text_response,
                     session_id=st.session_state.chat_session_id,
-                    doc_attached=bool(st.session_state.get("ephemeral_doc")),
+                    doc_attached=doc_attached_label,
                     arquetipo=str(st.session_state.user_profile_memory.get("arquetipo_detectado") or ""),
                 )
 
