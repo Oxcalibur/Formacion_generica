@@ -18,14 +18,29 @@ fecha_revision: 2026-11-23
 - **Si el contrato NO tiene cláusula expresa de actualización de renta (Art. 18.1 LAU):**
   - En contratos celebrados tras el 1 de abril de 2015, **no se puede actualizar la renta anualmente** durante la vigencia del contrato.
 
-## 2. Zonas de Mercado Residencial Tensionado y cuándo aplica "Gran Tenedor"
+## 2. Zonas de Mercado Residencial Tensionado y Lógica Exacta de "Gran Tenedor" (Art. 3.k Ley 12/2023)
 
-### Criterio de relevancia de "Gran Tenedor" (CRÍTICO)
-- **Definición general estatal (Ley 12/2023, art. 3.k):** titular de más de 10 inmuebles urbanos de uso residencial o una superficie construida de más de 1.500 m² de uso residencial (excluyendo garajes y trasteros). En zonas declaradas tensionadas, la Comunidad Autónoma puede rebajar este umbral a **5 o más inmuebles** dentro de la zona tensionada (como ocurre en Cataluña).
-- **Si la vivienda NO está en zona tensionada:**
-  - El estatus de gran tenedor **NO limita el precio de un nuevo contrato** tras la extinción legal del contrato anterior.
-  - Solo tiene efectos jurídicos si el inquilino solicita una **prórroga extraordinaria por situación de vulnerabilidad acreditada** (Art. 10.2 LAU) o si se interpone una **demanda de desahucio** (requisitos de procedibilidad y conciliación/intermediación del Art. 439.6 LEC).
-  - Por tanto, en consultas de subida de renta o fijación de renta de un nuevo contrato en municipios fuera de zona tensionada, **NO es necesario preguntar si el propietario es gran tenedor**.
+*(Nota: la definición parte del Art. 3.k de la Ley 12/2023, pero algunos umbrales en zona tensionada y criterios interpretativos pueden variar según la Comunidad Autónoma o reformas legales posteriores; contrastar siempre con `01_Normativa_Estatal_Vigente` y la resolución autonómica aplicable).*
+
+### Tabla comparativa: Gran Tenedor vs. No Gran Tenedor (Pequeño Tenedor)
+| Característica | Gran Tenedor | No Gran Tenedor (Pequeño Tenedor) |
+| :--- | :--- | :--- |
+| **Regla general (toda España)** | Persona física o jurídica titular de **más de 10 inmuebles** urbanos de uso residencial (**11 o más**) **O** de una superficie construida de **más de 1.500 m²** de uso residencial. | Persona física o jurídica titular de **10 o menos** inmuebles residenciales **Y** que no supere los **1.500 m²** construidos de uso residencial. |
+| **En Zona Tensionada (si la CCAA rebaja el umbral)** | Titular de **5 o más inmuebles** urbanos de uso residencial ubicados dentro de la misma zona declarada tensionada (criterio aplicado, por ejemplo, en Cataluña). | Titular de **menos de 5 inmuebles** (1 a 4) en esa zona tensionada. |
+| **Quién puede serlo** | Tanto **personas físicas** (particulares) como **personas jurídicas** (empresas/SL). | Tanto personas físicas como jurídicas por debajo de los umbrales. |
+
+### Qué cuenta y qué NO cuenta para el cálculo (Matices clave)
+- **Excluidos expresamente:** Los **garajes y trasteros** NO cuentan ni como inmuebles ni para los 1.500 m². Tampoco cuentan los **locales comerciales, oficinas o naves industriales** (solo computa el uso residencial).
+- **Vivienda habitual del propietario:** La ley no la excluye, por lo que la propia vivienda habitual del propietario **sí computa** dentro del total de inmuebles residenciales.
+- **Copropiedad (proindivisos / herencias):** Si el propietario comparte un piso (ej. 50 % con su pareja o 33 % con hermanos), a efectos de los **1.500 m²** se computa la superficie proporcional a su cuota; a efectos del **número de inmuebles**, existe litigiosidad y disparidad entre Audiencias Provinciales y CCAA (unas exigen titularidad plena y otras valoran el porcentaje de participación). Advertir siempre este matiz si hay proindivisos.
+
+### Efectos críticos de ser Gran Tenedor vs. Pequeño Tenedor
+1. **Precio del alquiler en zona tensionada:** Al **pequeño tenedor** que vuelve a alquilar una vivienda ya alquilada en los últimos 5 años se le topa la renta al contrato anterior; al **gran tenedor** se le aplica obligatoriamente el límite del **Índice de Referencia (SERPAVI)** si resulta más bajo.
+2. **Desahucios (Art. 439.6 LEC):** Para admitir a trámite una demanda de desahucio de un **gran tenedor**, este debe acreditar previamente si el inquilino es vulnerable y haber pasado por un procedimiento obligatorio de **conciliación o intermediación** ante la Administración (trámite no exigido al pequeño tenedor).
+3. **Prórroga extraordinaria por vulnerabilidad (Art. 10.2 LAU):** Si el inquilino acredita vulnerabilidad social y económica, el gran tenedor está obligado a aceptar la prórroga extraordinaria.
+
+### Regla de pertinencia en el triaje (CRÍTICO)
+- **Si la vivienda NO está en zona tensionada:** el estatus de gran tenedor **NO limita el precio de un nuevo contrato** tras la extinción legal del contrato anterior. Por tanto, en consultas de subida de renta o fijación de renta de un nuevo contrato en municipios fuera de zona tensionada, **NO se debe preguntar si el propietario es gran tenedor** (solo preguntar si hay desahucio o vulnerabilidad acreditada).
 
 ### Mapa orientativo de Zonas Tensionadas por Comunidad Autónoma
 *(Nota: la declaración de zona tensionada depende de resoluciones autonómicas publicadas en el BOE/diarios autonómicos y del registro del Ministerio de Vivienda - MIVAU; si un municipio es dudoso, adviértelo al usuario para confirmarlo en el visor oficial del MIVAU).*
