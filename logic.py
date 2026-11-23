@@ -1579,6 +1579,74 @@ def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str
     return cleaned_fallback, merged
 
 
+WEB_SEARCH_TRIGGERS = (
+    # Doctrina, jurisprudencia y criterios interpretativos (DGT, TEAC, tribunales)
+    "dgt", "consulta vinculante", "tributos", "teac", "tribunal supremo", "audiencia provincial",
+    "sentencia", "jurisprudencia", "inspeccion", "criterio", "aeat", "hacienda", "desgravacion",
+    "reduccion", "habitaciones",
+    # Desacuerdo del usuario o petición explícita de contrastar/buscar fuentes
+    "desacuerdo", "no estoy de acuerdo", "busca", "buscar", "contrast", "verifica",
+    "documentarte", "donde estas buscando", "cambio de criterio", "actualizado", "vigente hoy",
+    "ultimo dato", "ultima consulta", "reciente", "en mi experiencia", "en nuestra experiencia",
+    # Datos volátiles, municipales o regímenes no completos en knowledge_base/
+    "ordenanza", "empadron", "habitabilidad", "licencia", "ayuntamiento", "turistic",
+    "irav", "impuesto de sociedades", "impuesto sobre sociedades", "modelo 200",
+    "modelo 210", "irnr", "no residente", "patrimonio", "edav", "deduccion autonomica",
+    "tipo reducido", "bonificacion", "serpavi", "plusvalia", "iva ", "iva?",
+)
+
+
+def _debe_activar_busqueda_web(user_input: str, history: Optional[list] = None) -> Tuple[bool, str]:
+    """
+    Decide de forma determinista cuándo activar Google Search Grounding en Gemini
+    para verificar doctrina (DGT/TEAC/TS), discrepancias, ordenanzas municipales o datos vivos
+    antes de arriesgarse a responder de memoria o inventar criterios.
+    """
+    text = (user_input or "").strip()
+    if len(text) < 12:
+        return False, ""
+
+    norm = _normalize_search_text(text)
+
+    # Detectar código explícito de consulta DGT (ej. V2457-25) o referencia STS/SAP/BOE
+    if re.search(r"\bv\d{3,4}-\d{2}\b", norm) or re.search(r"\b(?:sts|sap|stsj|teac)\b", norm):
+        return True, "referencia_doctrina_o_jurisprudencia"
+
+    for trigger in WEB_SEARCH_TRIGGERS:
+        if trigger in norm:
+            return True, f"disparador:{trigger.strip()}"
+
+    return False, ""
+
+
+def _extract_grounding_sources(response) -> List[Dict[str, str]]:
+    """Extrae de forma segura las fuentes web verificadas devueltas por Google Search Grounding."""
+    sources: List[Dict[str, str]] = []
+    seen_urls = set()
+    try:
+        candidates = getattr(response, "candidates", None) or []
+        if not candidates:
+            return []
+        gm = getattr(candidates[0], "grounding_metadata", None)
+        if not gm:
+            return []
+        chunks = getattr(gm, "grounding_chunks", None) or []
+        for chunk in chunks:
+            web = getattr(chunk, "web", None)
+            if not web:
+                continue
+            uri = (getattr(web, "uri", None) or "").strip()
+            title = (getattr(web, "title", None) or uri).strip()
+            if uri and uri not in seen_urls:
+                seen_urls.add(uri)
+                sources.append({"title": title, "url": uri})
+            if len(sources) >= 5:
+                break
+    except Exception:
+        return []
+    return sources
+
+
 def get_chat_response(
     history: list,
     user_input: str,
@@ -1744,8 +1812,21 @@ def get_chat_response(
         "Incluye ÚNICAMENTE datos explícitamente confirmados por el usuario o su documento (NUNCA supongas titularidad ni gran_tenedor si no lo dijo)."
     )
 
+    use_web_search, web_search_reason = _debe_activar_busqueda_web(user_input, history)
+    web_search_block = ""
+    if use_web_search and hasattr(types, "GoogleSearch"):
+        web_search_block = (
+            "\n\n[VERIFICACIÓN WEB EN VIVO ACTIVADA]\n"
+            f"Motivo: `{web_search_reason}`. Tienes disponible la herramienta de búsqueda web (Google Search).\n"
+            "REGLAS ESTRICTAS DE USO:\n"
+            "1. Úsala ANTES de afirmar o negar categóricamente cualquier criterio interpretativo (consultas vinculantes DGT, TEAC, Tribunal Supremo, Audiencias Provinciales), "
+            "ordenanza municipal (habitabilidad, empadronamiento, licencias), dato mensual actualizado (IRAV del INE, tipos reducidos autonómicos) o régimen no cubierto en `knowledge_base/` (Impuesto sobre Sociedades, IRNR, Patrimonio).\n"
+            "2. JERARQUÍA DE FUENTES: La normativa estatal consolidada de `01_Normativa_Estatal_Vigente` (LAU vigente, RDL 29/2026, Ley 12/2023) prevalece SIEMPRE sobre blogs antiguos de internet. Prioriza fuentes oficiales (`boe.es`, `agenciatributaria.gob.es`, `petete.tributos.hacienda.gob.es`, `ine.es`, `mivau.gob.es`, `poderjudicial.es`, portales autonómicos/municipales).\n"
+            "3. Si el usuario cuestiona un criterio o aporta una consulta/experiencia distinta, contrasta activamente si existe un cambio de criterio reciente antes de responder. Nunca inventes códigos de consultas ni sentencias."
+        )
+
     full_system_instruction = (
-        f"{system_instruction}{motor_block}{fecha_block}{external_hint}{ephemeral_doc_block}\n\n"
+        f"{system_instruction}{motor_block}{web_search_block}{fecha_block}{external_hint}{ephemeral_doc_block}\n\n"
         f"Información de Contexto (Base Documental en knowledge_base):\n{contexto_seguro}"
     )
 
@@ -1764,6 +1845,10 @@ def get_chat_response(
         if "2.5" in str(model_name) and hasattr(types, "ThinkingConfig"):
             gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=2048)
 
+        # Activar Google Search Grounding selectivo para contrastar doctrina/jurisprudencia/datos vivos
+        if use_web_search and hasattr(types, "GoogleSearch"):
+            gen_config_kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
+
         try:
             response = llamar_gemini_con_rotacion_y_reintento(
                 model_name=model_name,
@@ -1771,8 +1856,15 @@ def get_chat_response(
                 config=types.GenerateContentConfig(**gen_config_kwargs)
             )
         except Exception as cfg_err:
-            if "thinking" in str(cfg_err).lower() and "thinking_config" in gen_config_kwargs:
+            err_lower = str(cfg_err).lower()
+            retried = False
+            if ("google_search" in err_lower or "tool" in err_lower or "grounding" in err_lower) and "tools" in gen_config_kwargs:
+                gen_config_kwargs.pop("tools", None)
+                retried = True
+            if "thinking" in err_lower and "thinking_config" in gen_config_kwargs:
                 gen_config_kwargs.pop("thinking_config", None)
+                retried = True
+            if retried:
                 response = llamar_gemini_con_rotacion_y_reintento(
                     model_name=model_name,
                     contents=contents,
@@ -1781,6 +1873,7 @@ def get_chat_response(
             else:
                 raise cfg_err
         raw_response = response.text
+        web_sources = _extract_grounding_sources(response)
 
         # 1. Extraer y fusionar actualización de perfil de sesión [PROFILE_UPDATE] y validar con motor determinista
         text_part, updated_profile = _extract_and_merge_profile(raw_response, current_profile)
@@ -1860,6 +1953,7 @@ def get_chat_response(
             "text": text_part,
             "recommendations": recommendations,
             "documents": generated_docs,
+            "web_sources": web_sources,
             "updated_profile": updated_profile,
         }
     except Exception as e:
@@ -1867,6 +1961,7 @@ def get_chat_response(
             "text": f"⚠️ **Error inesperado:** `{e}`",
             "recommendations": [],
             "documents": [],
+            "web_sources": [],
             "updated_profile": current_profile,
         }
 

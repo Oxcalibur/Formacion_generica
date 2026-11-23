@@ -328,6 +328,12 @@ if mode == get_text("nav_assistant"):
                 for rec in msg["recommendations"]:
                     st.markdown(f"- **[{rec.get('title', 'Recurso')}]({rec.get('url', '#')})**: {rec.get('reason', 'Recomendado para profundizar en el tema.')}")
 
+            # Mostrar fuentes web oficiales/externas consultadas por Grounding si existieron
+            if msg.get("web_sources"):
+                with st.expander(f"🌐 Fuentes externas contrastadas ({len(msg['web_sources'])})", expanded=False):
+                    for src in msg["web_sources"]:
+                        st.markdown(f"- [{src.get('title', 'Fuente')}]({src.get('url', '#')})")
+
     # Panel siempre visible justo encima del chat para adjuntar documento temporal (solo en memoria)
     with st.container(border=True):
         col_title, col_export, col_new = st.columns([3.2, 1.4, 1.4])
@@ -442,6 +448,7 @@ if mode == get_text("nav_assistant"):
             text_response = response_data.get("text", "No he podido generar una respuesta.")
             recommendations = response_data.get("recommendations", [])
             documents = response_data.get("documents", [])
+            web_sources = response_data.get("web_sources", [])
             if response_data.get("updated_profile"):
                 st.session_state.user_profile_memory = response_data["updated_profile"]
 
@@ -462,12 +469,13 @@ if mode == get_text("nav_assistant"):
                     username=st.session_state.get("username", "anonimo"),
                 )
 
-        # Guardar la respuesta estructurada (texto + recomendaciones + documentos PDF) en el historial
+        # Guardar la respuesta estructurada (texto + recomendaciones + documentos PDF + fuentes web) en el historial
         st.session_state.chat_history.append({
             "role": "assistant",
             "content": text_response,
             "recommendations": recommendations,
             "documents": documents,
+            "web_sources": web_sources,
         })
         st.rerun()
 # --- Pantalla 2: Dojo (Quiz) ---
