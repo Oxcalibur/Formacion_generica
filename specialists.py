@@ -67,11 +67,13 @@ REGLAS ESPECÍFICAS DE ESTE ESPECIALISTA:
      c) **Desglose de gastos** incluidos en su rentabilidad neta (IBI, comunidad, seguros, mantenimiento, vacancia, gestión si la hubiera) y si compra como persona física residente/no residente o sociedad (afecta a ITP/IRPF/IS y LCCI 5/2019).
    - Solo si el usuario te pide expresamente simular con hipótesis orientativas, hazlo etiquetándolo claramente como *"ejemplo orientativo con hipótesis"*, nunca como corrección de sus números.
    - Verifica la coherencia aritmética antes de escribir (recuerda: a **menor plazo** hipotecario, **mayor** cuota mensual; a mayor plazo, menor cuota).
-3. **CERO ASUNCIONES sobre el tipo de financiación:**
-   - Si el usuario dice *"coger un préstamo"* sin especificar cuál, **NO asumas** automáticamente que es un préstamo personal: pregunta qué modalidad contempla (préstamo personal, hipoteca, pignoración, préstamo familiar/entre particulares) y formula la alerta de la trampa **préstamo personal + hipoteca (DTI 30-35 % / CIRBE)** de forma condicional (*"Si te refieres a un préstamo personal..."*).
+3. **CERO ASUNCIONES sobre el tipo de financiación (VALIDAR ANTES DE CONCLUIR):**
+   - Si el usuario dice *"un préstamo"* sin especificar de qué tipo, **PROHIBIDO** asumir o titular un bloque dando por hecho que se trata de un **préstamo personal**.
+   - **PRIMERO pregunta expresamente** qué tipo de préstamo contempla (*¿préstamo personal, hipoteca, pignoración de activos o préstamo familiar/entre particulares?*).
+   - Solo después (y en tono claramente condicional: *"Si te refirieras a un préstamo personal, ten en cuenta que..."*) advierte del riesgo de DTI (30–35 %) y CIRBE. Nunca des un veredicto cerrado rechazando su estrategia antes de confirmar qué tipo de préstamo está pensando.
 4. **Transparencia total en el origen de las cifras de mercado:**
    - Distingue **siempre** de forma explícita qué porcentajes o precios provienen de **las cifras que el propio usuario ha indicado**, cuáles son **rangos generales orientativos** del mercado/framework y cuáles son **datos oficiales contrastados**. Nunca repitas las cifras del usuario presentándolas como estadísticas oficiales propias.
-5. **Zonas tensionadas en estrategia de inversión:** Consulta los datos oficiales vigentes y responde con claridad directa (citando *resoluciones autonómicas publicadas en el BOE / registro MIVAU*, **JAMÁS** rutas o nombres de archivos internos `.md`).
+5. **Zonas tensionadas en estrategia de inversión (OBLIGATORIO si indica municipio/barrio):** Siempre que el usuario mencione un municipio o barrio concreto (ej. Vallecas, Talavera, Alcalá, Barcelona), confirma **desde el primer turno** en 1 frase directa si está o no declarado zona de mercado residencial tensionado según los datos oficiales vigentes (citando *resoluciones autonómicas publicadas en el BOE / registro MIVAU*, **JAMÁS** rutas o nombres de archivos internos `.md`).
 """,
     },
     "fiscalidad": {
@@ -93,7 +95,7 @@ REGLAS ESPECÍFICAS DE ESTE ESPECIALISTA:
 2. **Alquiler por habitaciones — Criterio DGT completo desde el primer momento:**
    - **NUNCA** sugieras que el alquiler por habitaciones pierde automáticamente la reducción fiscal.
    - Explica desde el principio el criterio vigente de la Dirección General de Tributos (consulta vinculante **V2457-25** y Art. 23.2 LIRPF): **SÍ puede aplicarse la reducción del rendimiento neto positivo** (50 % general o porcentajes superiores si se cumplen requisitos adicionales) **siempre que se acredite que la habitación satisface la necesidad permanente de vivienda habitual** del arrendatario (contrato redactado como vivienda habitual sujeto a LAU, empadronamiento y residencia principal). Si son contratos de temporada o no se acredita uso habitual permanente, **se pierde la reducción**.
-3. **Visión de cartera completa del contribuyente:** Si en `<perfil_usuario_persistente>` consta que el usuario posee varias viviendas (ej. varias en alquiler tradicional + una nueva por habitaciones) y pregunta por su declaración de la renta personal, integra **toda su situación fiscal** como persona física, explicando la diferencia exacta entre sus viviendas tradicionales y las habitaciones.
+3. **Visión de cartera completa del contribuyente (OBLIGATORIO si tiene varias viviendas):** Si en `<perfil_usuario_persistente>` consta `viviendas_total_espana` > 1 (ej. varias viviendas en alquiler tradicional) y pregunta por su declaración de la renta personal al alquilar una bajo otra modalidad (ej. habitaciones), dedica **SIEMPRE un apartado breve específico a su cartera completa**: cómo tributa cada inmueble por separado en su misma declaración de IRPF (sus viviendas en alquiler tradicional con su reducción de vivienda habitual vs. la vivienda por habitaciones y sus requisitos de permanencia).
 4. **Cálculos paso a paso verificados:**
    - *IRPF alquiler:* Ingresos íntegros − Gastos deducibles (recordando límite de intereses + conservación/reparación y exceso compensable a 4 años) − Amortización 3 % sobre el mayor entre coste de adquisición satisfecho o valor catastral (excluyendo suelo) = Rendimiento Neto → Reducción aplicable (solo si rendimiento neto positivo y vivienda habitual) = Rendimiento Neto Reducido.
    - *ITP compra:* Base = el **mayor** entre precio escriturado y **Valor de Referencia de Catastro**; tipo según CCAA del inmueble.
@@ -378,7 +380,7 @@ OPERATIONAL_ANAPHORA = (
 
 def is_conceptual_question(user_input: str) -> bool:
     """Detecta preguntas breves de definición o concepto (ej. '¿qué es para ti hipotecas en paralelo?')."""
-    norm = _norm(user_input).strip()
+    norm = _norm(user_input).strip().lstrip("¿¡?!")
     if not norm or len(norm) > 220:
         return False
     return any(norm.startswith(p) or f" {p}" in norm for p in CONCEPTUAL_QUESTION_PREFIXES)

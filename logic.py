@@ -706,8 +706,13 @@ def llamar_gemini_con_rotacion_y_reintento(model_name, contents, config=None, ma
                 )
             except Exception as e:
                 error_str = str(e).upper()
-                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "QUOTA" in error_str:
-                    print(f"⚠️ Cuota agotada para la key ...{key[-4:]}. Saltando a otra...")
+                transient_errors = (
+                    "429", "RESOURCE_EXHAUSTED", "QUOTA",
+                    "503", "500", "504", "UNAVAILABLE", "TIMED OUT", "TIMEOUT",
+                    "DEADLINE_EXCEEDED", "OVERLOADED", "INTERNAL",
+                )
+                if any(tok in error_str for tok in transient_errors):
+                    print(f"⚠️ Error transitorio ({error_str[:60]}) con key ...{key[-4:]}. Reintentando...")
                     last_error = e
                     continue
                 else:
@@ -1305,14 +1310,70 @@ INTERNAL_KB_PATH_REPLACEMENTS = (
 )
 
 
-def _sanitize_internal_references(text: str) -> str:
-    """Elimina cualquier fuga accidental de rutas o ficheros internos .md antes de mostrar la respuesta."""
+def _strip_model_internal_leak(text: str) -> str:
+    """Red de seguridad: elimina trazas crudas `tool_code ... thought ...` si Gemini llegara a filtrarlas en texto."""
     if not text:
         return text
-    cleaned = text
+    if not re.search(r"\btool_code\b|\bthought\s+(?:The user|I need|I will|Let's|First,)", text):
+        return text
+    # Eliminar tool_code print(...) incluso con paréntesis anidados como print(google_search.search(queries=[...]))
+    cleaned = re.sub(r"(?is)\btool_code\s+print\([^\n]*\)\s*", "", text)
+    if re.search(r"(?i)^\s*thought\b", cleaned):
+        # Localizar el inicio real de la respuesta en español tras el bloque interno `thought ...`
+        m_es = re.search(
+            r"(?:(?:\.|!|\?|\n)\s*)(?=(?:¡?(?:Aquí|Hola|Entiendo|Gracias|Según|Basándonos|Para\s+poder|En\s+los|En\s+cuanto|Respecto|Sí,|No,|Como\s+Asesor|El\s+artículo|La\s+normativa|Terrassa)|#{1,3}\s))",
+            cleaned,
+        )
+        if m_es:
+            cleaned = cleaned[m_es.end():].lstrip()
+        else:
+            cleaned = re.sub(r"(?is)^\s*thought\b.*?(?:\n\n|\Z)", "", cleaned, count=1).lstrip()
+    cleaned = re.sub(r"(?im)^(?:tool_code|thought)\b[^\n]*\n?", "", cleaned)
+    return cleaned.strip()
+
+
+def _sanitize_internal_references(text: str) -> str:
+    """Elimina cualquier fuga accidental de rutas/ficheros internos .md o trazas internas tool_code/thought."""
+    if not text:
+        return text
+    cleaned = _strip_model_internal_leak(text)
     for pattern, replacement in INTERNAL_KB_PATH_REPLACEMENTS:
         cleaned = pattern.sub(replacement, cleaned)
-    return cleaned
+    return cleaned.strip()
+
+
+def _extract_clean_response_text(response) -> str:
+    """
+    Extrae únicamente el texto visible para el usuario de la respuesta de Gemini,
+    descartando partes internas (`thought=True`, `executable_code`, `code_execution_result`)
+    y evitando duplicados completos si el modelo emite un borrador y una versión final tras Grounding.
+    """
+    try:
+        candidates = getattr(response, "candidates", None) or []
+        if candidates:
+            content = getattr(candidates[0], "content", None)
+            parts = getattr(content, "parts", None) or []
+            visible_parts: List[str] = []
+            for part in parts:
+                if getattr(part, "thought", False):
+                    continue
+                if getattr(part, "executable_code", None) is not None:
+                    continue
+                if getattr(part, "code_execution_result", None) is not None:
+                    continue
+                part_text = getattr(part, "text", None)
+                if part_text and part_text.strip():
+                    visible_parts.append(part_text.strip())
+            if len(visible_parts) >= 2:
+                # Si Gemini devolvió 2 respuestas completas duplicadas (ambas con aviso legal), conservar la última (ya contrastada)
+                with_disclaimer = [p for p in visible_parts if "Orientación jurídica, fiscal y financiera" in p]
+                if len(with_disclaimer) >= 2:
+                    return with_disclaimer[-1]
+            if visible_parts:
+                return "\n\n".join(visible_parts).strip()
+    except Exception:
+        pass
+    return (getattr(response, "text", None) or "").strip()
 
 
 def _to_optional_int(val: Any) -> Optional[int]:
@@ -1532,8 +1593,8 @@ def _extract_explicit_facts_from_user_text(
         "murcia": ("Murcia", "Región de Murcia", False),
     }
 
-    # Distinguir "vivo en X" (residencia fiscal) vs ubicación del inmueble
-    res_match = re.search(r"\b(?:vivo|resido|soy residente)\s+en\s+([a-z\s]{3,30})", norm)
+    # Distinguir "vivo en X" / "residente fiscal en X" (residencia fiscal) vs ubicación del inmueble
+    res_match = re.search(r"\b(?:vivo|resido|(?:soy\s+)?residente(?:\s+fiscal)?)\s+en\s+([a-z\s]{3,30})", norm)
     if res_match and not updated.get("residencia_fiscal_ccaa"):
         lugar_res = res_match.group(1).strip()
         if any(w in lugar_res for w in ("extranjero", "fuera de espana", "londres", "francia", "alemania", "eeuu", "suiza", "dubai")):
@@ -1868,10 +1929,29 @@ def get_chat_response(
     
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
     
-    # 4. Serializar e inyectar el módulo de especialistas activos + memoria separada en 2 capas
+    # 4. Determinar si Gran Tenedor / 1.500 m² es realmente pertinente en ESTE turno
+    norm_turn_text = _normalize_search_text(user_input or "")
+    triggers_gt_ahora = (
+        "gran tenedor", "desahucio", "impago", "sin pagar", "vulnerab",
+        "serpavi", "zona tensionada", "conciliacion", "intermediacion",
+        "patrimonio", "edav", "sociedad patrimonial",
+    )
+    if active_specialists == ["operativa_gestion"] or conceptual_mode:
+        requiere_gt_ahora = False
+    else:
+        requiere_gt_ahora = bool(
+            current_profile.get("zona_tensionada") is True
+            or any(t in norm_turn_text for t in triggers_gt_ahora)
+            or ("legal_arrendamientos" in active_specialists and ("1500" in norm_turn_text or "1.500" in norm_turn_text))
+        )
+
+    # 5. Serializar e inyectar el módulo de especialistas activos + memoria separada en 2 capas
     local_resources_str = json.dumps(multimedia_index, ensure_ascii=False) if multimedia_index else "No hay recursos locales disponibles."
     perfil_usuario_layer, caso_actual_layer = split_profile_layers(current_profile)
-    user_profile_json_str = json.dumps(perfil_usuario_layer, ensure_ascii=False, indent=2)
+    perfil_for_prompt = dict(perfil_usuario_layer)
+    if not requiere_gt_ahora:
+        perfil_for_prompt.pop("gran_tenedor", None)
+    user_profile_json_str = json.dumps(perfil_for_prompt, ensure_ascii=False, indent=2)
     case_state_json_str = json.dumps(caso_actual_layer, ensure_ascii=False, indent=2)
     specialist_prompt_str = build_specialist_prompt_section(active_specialists, conceptual=conceptual_mode)
 
@@ -1890,24 +1970,16 @@ def get_chat_response(
             f"<caso_actual_solo_esta_operacion>\n{case_state_json_str}\n</caso_actual_solo_esta_operacion>"
         )
 
-    # 5. Determinar si preguntar por Gran Tenedor / 1.500 m² es realmente pertinente en ESTE turno
-    norm_turn_text = _normalize_search_text(user_input or "")
-    triggers_gt_ahora = (
-        "gran tenedor", "desahucio", "impago", "sin pagar", "vulnerab",
-        "serpavi", "zona tensionada", "conciliacion", "intermediacion",
-        "1500", "1.500", "patrimonio", "edav", "sociedad patrimonial",
-    )
-    if active_specialists == ["operativa_gestion"] or conceptual_mode:
-        requiere_gt_ahora = False
-    else:
-        requiere_gt_ahora = bool(
-            current_profile.get("zona_tensionada") is True
-            or any(t in norm_turn_text for t in triggers_gt_ahora)
-        )
     motor_eval["preguntar_gran_tenedor_ahora"] = requiere_gt_ahora
     motor_eval["especialistas_activos"] = active_specialists
     motor_eval["cambio_de_caso_detectado"] = case_switched
-    motor_json_str = json.dumps(motor_eval, ensure_ascii=False, indent=2)
+    motor_for_prompt = dict(motor_eval)
+    if not requiere_gt_ahora:
+        # Evitar inducir al modelo a mencionar 'gran/pequeño tenedor' en consultas donde no aplica (ej. IRPF o operativa)
+        motor_for_prompt.pop("gran_tenedor", None)
+        motor_for_prompt.pop("motivos_gran_tenedor", None)
+        motor_for_prompt.pop("datos_faltantes_gran_tenedor", None)
+    motor_json_str = json.dumps(motor_for_prompt, ensure_ascii=False, indent=2)
 
     if requiere_gt_ahora:
         regla_gt_turno = (
@@ -1918,7 +1990,8 @@ def get_chat_response(
     else:
         regla_gt_turno = (
             "2. `preguntar_gran_tenedor_ahora` es `false`: **PROHIBIDO** preguntar en este turno por gran tenedor, por el número total de viviendas "
-            "o por los 1.500 m² (no afectan a la consulta actual y resulta molesto repetirlos). NUNCA menciones 'completar tu perfil para la plataforma' ni insistas en cerrar un arquetipo interno."
+            "o por los 1.500 m², y **NO menciones ni discutas** si es gran o pequeño tenedor cuando no afecta a la consulta actual (ej. gastos deducibles en IRPF). "
+            "NUNCA menciones 'completar tu perfil para la plataforma' ni insistas en cerrar un arquetipo interno."
         )
 
     case_switch_note = ""
@@ -2081,13 +2154,16 @@ def get_chat_response(
             "temperature": 0.15,
             "max_output_tokens": 4096,
         }
-        # Activar razonamiento interno en modelos Gemini 2.5 para verificar fechas, plazos y lógica legal
-        if "2.5" in str(model_name) and hasattr(types, "ThinkingConfig"):
-            gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=2048)
-
-        # Activar Google Search Grounding selectivo para contrastar doctrina/jurisprudencia/datos vivos
+        # Activar Google Search Grounding selectivo para contrastar doctrina/jurisprudencia/datos vivos.
+        # NOTA CRÍTICA Gemini 2.5 Flash: omitir `thinking_config` activa pensamiento dinámico por defecto,
+        # lo que al combinarse con `GoogleSearch` puede filtrar trazas `tool_code`/`thought` o devolver 0 partes.
+        # Por eso, cuando `GoogleSearch` está activo fijamos explícitamente `thinking_budget=0`.
         if use_web_search and hasattr(types, "GoogleSearch"):
             gen_config_kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
+            if "2.5" in str(model_name) and hasattr(types, "ThinkingConfig"):
+                gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        elif "2.5" in str(model_name) and hasattr(types, "ThinkingConfig"):
+            gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=2048)
 
         try:
             response = llamar_gemini_con_rotacion_y_reintento(
@@ -2112,8 +2188,22 @@ def get_chat_response(
                 )
             else:
                 raise cfg_err
-        raw_response = response.text
+        raw_response = _extract_clean_response_text(response)
         web_sources = _extract_grounding_sources(response)
+
+        # Red de seguridad anti-respuesta vacía (ej. respuesta transitoria con 0 partes en Grounding)
+        if not raw_response:
+            fallback_kwargs = dict(gen_config_kwargs)
+            fallback_kwargs.pop("tools", None)
+            if "2.5" in str(model_name) and hasattr(types, "ThinkingConfig"):
+                fallback_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=1024)
+            response_fb = llamar_gemini_con_rotacion_y_reintento(
+                model_name=model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(**fallback_kwargs)
+            )
+            raw_response = _extract_clean_response_text(response_fb)
+            web_sources = _extract_grounding_sources(response_fb) or web_sources
 
         # 1. Extraer y fusionar actualización de perfil de sesión [PROFILE_UPDATE] y validar con motor determinista
         text_part, updated_profile = _extract_and_merge_profile(raw_response, current_profile)

@@ -8,8 +8,12 @@ __pycache__/
 # Script de utilidad local, no debe ser parte del repositorio.
 create_client.py
 
-# Salidas temporales de auditoría QA
+# Salidas temporales de auditoría QA y regresión
 qa_report_latest.md
 qa_report_meta.json
+qa_regression_latest.md
 
+# Secretos locales (NUNCA subir a Git)
+.streamlit/secrets.toml
+.env
 *.toml

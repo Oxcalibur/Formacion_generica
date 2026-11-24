@@ -1,0 +1,262 @@
+{
+  "version": "1.0",
+  "description": "Catálogo vivo de pruebas de regresión conversacional (qa_auto) para Asesor Inmobiliario Integral. Cada fallo detectado en QA/producción se añade aquí para garantizar cero regresiones antes de cada commit.",
+  "suites": [
+    {
+      "id": "multi_caso_contaminacion",
+      "name": "Sesión multi-caso: Operativa -> Inversión Vallecas -> Multi-ciudad -> Hipotecas en paralelo",
+      "description": "Valida aislamiento entre casos (sin arrastrar Zazume ni falta de seguro), exención operativa, bloqueo suave financiero sin inventar tasas, DGT V2457-25, transparencia de cifras, anti-fuga .md y jerga real de inversor.",
+      "turns": [
+        {
+          "turn_id": "T1_operativa_zazume",
+          "prompt": "Estoy de viaje y me ha llamado el inquilino en sábado porque se ha averiado la caldera y no tiene agua caliente. El piso lo lleva Zazume y no quiero que me llamen a mí en fin de semana. ¿Cómo organizo esto para que no se repita?",
+          "expected_specialists_exact": ["operativa_gestion"],
+          "expected_case_switched": false,
+          "must_not_contain": [
+            "gran tenedor",
+            "1.500",
+            "1500 m",
+            "comunidad autonoma",
+            "persona fisica o",
+            "persona juridica",
+            ".md"
+          ],
+          "judge_criteria": [
+            "No pregunta municipio/CCAA ni si actúa como persona física o jurídica (consulta puramente operativa).",
+            "Se centra en preguntas o pasos operativos útiles (seguro de hogar con asistencia 24h, protocolo con Zazume fuera de horario)."
+          ]
+        },
+        {
+          "turn_id": "T2_operativa_sin_seguro",
+          "prompt": "No tengo seguro de hogar en ese piso y con Zazume tengo el plan básico L-V de 9 a 17.",
+          "expected_specialists_exact": ["operativa_gestion"],
+          "expected_case_switched": false,
+          "simulate_case_facts": ["Usa Zazume", "No tiene seguro de hogar"],
+          "must_not_contain": [
+            "gran tenedor",
+            "1.500",
+            ".md"
+          ],
+          "judge_criteria": [
+            "Ofrece un protocolo práctico accionable para emergencias de fin de semana sin seguro de hogar (ej. contratar seguro con asistencia 24h, fijar límites de autorización, instrucciones al inquilino)."
+          ]
+        },
+        {
+          "turn_id": "T3_salto_inversion_vallecas",
+          "prompt": "Una pregunta: he encontrado un piso en Vallecas totalmente reformado porque es de un inversor que hace flipping por 175.000 € y tiene una rentabilidad bruta de 7,5 % y neta de 6,4 % (antes de impuestos). Me deja un cashflow de 230 €/mes y ROCE del 32 %. ¿Lo ves bien para una primera inversión?",
+          "expected_specialists_include": ["inversion_financiacion"],
+          "expected_specialists_exclude": ["operativa_gestion"],
+          "expected_case_switched": true,
+          "expected_case_facts_empty_before_turn": true,
+          "must_not_contain": [
+            "zazume",
+            "no tienes seguro",
+            "sin seguro de hogar",
+            "04_datos_volatiles",
+            ".md"
+          ],
+          "must_contain_any": [
+            ["no esta declarada", "no esta declarado", "no ha sido declarada", "no ha sido declarado", "no ha declarado", "no es zona", "no es una zona", "no esta en zona"]
+          ],
+          "judge_criteria": [
+            "NO arrastra ningún dato del caso anterior (ni menciona Zazume ni asume que no tiene seguro de hogar).",
+            "Pregunta por datos clave faltantes antes de dar un veredicto cerrado, incluyendo desembolso total real (ITP, gastos, comisiones/amueblado), condiciones de financiación y gastos incluidos en la rentabilidad neta.",
+            "Confirma que Vallecas/Madrid NO es zona tensionada sin citar rutas ni archivos .md."
+          ]
+        },
+        {
+          "turn_id": "T4_vallecas_roce_y_habitaciones",
+          "prompt": "Financio el 80 % como persona física residente en España y lo quiero alquilar por habitaciones. Dime qué te falta para validar mi ROCE y cómo queda la reducción del IRPF.",
+          "expected_specialists_include": ["inversion_financiacion", "fiscalidad"],
+          "expected_case_switched": false,
+          "expected_user_profile": {
+            "titularidad": "persona_fisica",
+            "no_residente": false
+          },
+          "must_contain_any": [
+            ["v2457-25", "50%", "50 %"],
+            ["interes", "tipo de interes"],
+            ["plazo", "anos"]
+          ],
+          "must_not_contain": [
+            "zazume",
+            "no tienes seguro",
+            "sin seguro de hogar",
+            ".md"
+          ],
+          "judge_criteria": [
+            "NO inventa un tipo de interés ni un plazo hipotecario para calcular una cuota y contradecir el ROCE del 32 % del usuario; primero pide tipo de interés, plazo y desglose de desembolso/gastos.",
+            "Explica desde ya el criterio completo de la DGT (V2457-25 / Art. 23.2 LIRPF) sobre alquiler por habitaciones: SÍ aplica la reducción del 50 % si se acredita vivienda habitual permanente y empadronamiento, y se pierde si es alquiler de temporada.",
+            "NO arrastra Zazume ni ausencia de seguro de hogar del Caso 1."
+          ]
+        },
+        {
+          "turn_id": "T5_salto_explicito_multiciudad",
+          "prompt": "Vamos por otro asunto totalmente distinto. Estoy comparando zonas para empezar: Talavera (unos 95k €, 8-10 % bruta), Alcalá de Henares (140k €, 6 % tradicional o 9 % habitaciones) y Guadalajara (135k €, 7 %). Pensaba pedir un préstamo para comprar el primero y luego financiar el segundo. ¿Cómo lo ves?",
+          "expected_specialists_exact": ["inversion_financiacion"],
+          "expected_case_switched": true,
+          "expected_user_profile": {
+            "titularidad": "persona_fisica",
+            "no_residente": false
+          },
+          "expected_case_fields_null": ["municipio_inmueble", "modalidad_alquiler"],
+          "must_contain_any": [
+            ["que tipo de prestamo", "tipo de prestamo", "prestamo personal, hipoteca", "prestamo familiar", "pignoracion"]
+          ],
+          "must_not_contain": [
+            "zazume",
+            "no tienes seguro",
+            "sin seguro de hogar",
+            "vallecas",
+            "04_datos_volatiles",
+            "02_municipios_zona_tensionada",
+            ".md"
+          ],
+          "judge_criteria": [
+            "NO arrastra hechos del Caso 1 ni del Caso 2 (no menciona Vallecas, ni Zazume, ni falta de seguro de hogar, ni da por hecho que ha elegido alquiler por habitaciones).",
+            "VALIDA explícitamente qué tipo de préstamo contempla el usuario (preguntando si habla de préstamo personal, hipoteca, pignoración o préstamo familiar) ANTES de dar por hecho que es un préstamo personal (sí puede añadir una advertencia condicional sobre préstamo personal + CIRBE).",
+            "Distingue con transparencia que los porcentajes de rentabilidad mencionados proceden de las cifras que el usuario baraja o son rangos orientativos, y NO cita ningún archivo interno .md."
+          ]
+        },
+        {
+          "turn_id": "T6_jerga_hipotecas_en_paralelo",
+          "prompt": "¿Qué es para ti hipotecas en paralelo?",
+          "expected_specialists_exact": ["inversion_financiacion"],
+          "expected_case_switched": false,
+          "expected_conceptual": true,
+          "must_contain_any": [
+            ["cirbe"],
+            ["simultane", "desfase", "muy proximas", "casi a la vez", "varios bancos", "entidades distintas"]
+          ],
+          "must_not_contain": [
+            "zazume",
+            ".md"
+          ],
+          "judge_criteria": [
+            "Define 'hipotecas en paralelo' con su acepción real en inversión inmobiliaria en España: solicitar dos o más hipotecas simultáneamente en bancos distintos con firmas muy próximas aprovechando el desfase de actualización de la CIRBE (y NO simplemente 'tener más de una hipoteca activa').",
+            "Advierte de los riesgos críticos (deber de veracidad ante el banco/FEIN, riesgo de bloqueo si salta en CIRBE antes de firmar la segunda y sobreendeudamiento/DTI real)."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cartera_7_pisos_irpf",
+      "name": "Coherencia de cartera persistente: 7 viviendas tradicionales + IRPF personal en habitaciones",
+      "description": "Verifica que la Capa 1 (perfil_usuario) mantiene el número de viviendas en toda la sesión al preguntar por el IRPF personal.",
+      "turns": [
+        {
+          "turn_id": "T1_cartera_7_viviendas",
+          "prompt": "Soy persona física residente fiscal en Madrid y tengo 7 viviendas en total en España en alquiler tradicional (no supero los 1.500 m²). ¿Qué gastos de reparación puedo deducirme en el IRPF?",
+          "expected_specialists_include": ["fiscalidad"],
+          "expected_case_switched": false,
+          "expected_user_profile": {
+            "titularidad": "persona_fisica",
+            "no_residente": false,
+            "viviendas_total_espana": 7,
+            "gran_tenedor": false
+          },
+          "must_contain_any": [
+            ["4 anos", "cuatro anos", "limite"]
+          ],
+          "must_not_contain": [
+            ".md"
+          ],
+          "judge_criteria": [
+            "Explica la deducibilidad de gastos de conservación y reparación frente a mejoras, incluyendo el límite conjunto con intereses de financiación y el exceso compensable en los 4 años siguientes.",
+            "No pregunta innecesariamente por gran tenedor ni por los 1.500 m²."
+          ]
+        },
+        {
+          "turn_id": "T2_irpf_habitaciones_persona",
+          "prompt": "Y si ahora alquilo una por habitaciones, ¿qué desgravaciones y reducciones tengo en el IRPF en mí como persona?",
+          "expected_specialists_include": ["fiscalidad"],
+          "expected_case_switched": false,
+          "expected_user_profile": {
+            "viviendas_total_espana": 7
+          },
+          "must_contain_any": [
+            ["v2457-25", "50%", "50 %"],
+            ["habitual", "permanente"]
+          ],
+          "must_not_contain": [
+            ".md"
+          ],
+          "judge_criteria": [
+            "Mantiene la visión de cartera completa (recuerda sus viviendas en alquiler tradicional además del alquiler por habitaciones en su IRPF como persona física).",
+            "Aplica el criterio DGT V2457-25 / Art. 23.2 LIRPF explicando cuándo aplica la reducción del 50 % y cuándo se pierde (temporada)."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legal_gran_tenedor_terrassa",
+      "name": "Legal LAU + Regla anti-trampa de Gran Tenedor (Terrassa zona tensionada)",
+      "description": "Verifica que en zona tensionada NO descarta Gran Tenedor con un dato parcial de un solo municipio, exige validar todos los umbrales (<=10 en España y <=1.500 m²) y calcula bien el vencimiento de 5 años PF.",
+      "turns": [
+        {
+          "turn_id": "T1_terrassa_dato_parcial",
+          "prompt": "Actúo como persona física residente en España. Tengo un piso alquilado en Terrassa desde el 01/05/2021 y quiero hacer un nuevo contrato al vencer subiendo la renta un 15 %. En Terrassa solo tengo ese piso.",
+          "expected_specialists_exact": ["legal_arrendamientos"],
+          "expected_case_switched": false,
+          "expected_user_profile": {
+            "titularidad": "persona_fisica",
+            "no_residente": false,
+            "gran_tenedor": null
+          },
+          "must_contain_any": [
+            ["tensionada", "tensionado"],
+            ["1.500", "1500"],
+            ["toda espana", "en espana", "en total"]
+          ],
+          "must_not_contain": [
+            ".md"
+          ],
+          "judge_criteria": [
+            "Confirma de forma directa que Terrassa SÍ está declarada zona tensionada (sin citar archivos .md).",
+            "Aplica la regla anti-trampa de Gran Tenedor: NO afirma ni concluye que el usuario ya sea pequeño tenedor solo porque tenga 1 piso en Terrassa (sí puede explicar ambos escenarios condicionales 'si eres / si no eres'); pregunta por el total de viviendas residenciales en toda España y si supera los 1.500 m² construidos residenciales."
+          ]
+        },
+        {
+          "turn_id": "T2_terrassa_confirma_pequeno_tenedor",
+          "prompt": "En toda España tengo 3 viviendas en total (incluyendo mi vivienda habitual) y suman unos 260 m² construidos residenciales.",
+          "expected_specialists_exact": ["legal_arrendamientos"],
+          "expected_case_switched": false,
+          "expected_user_profile": {
+            "viviendas_total_espana": 3,
+            "gran_tenedor": false
+          },
+          "must_contain_any": [
+            ["contrato anterior", "renta anterior", "pequeno tenedor", "no eres gran tenedor"]
+          ],
+          "must_not_contain": [
+            ".md"
+          ],
+          "judge_criteria": [
+            "Con los 3 umbrales ya confirmados, concluye correctamente que NO es gran tenedor (pequeño tenedor).",
+            "Explica que en zona tensionada no puede subir libremente un 15 % al nuevo contrato porque aplica el límite del contrato anterior (más actualización permitida / supuestos legales de incremento del 10 % si concurren requisitos)."
+          ]
+        },
+        {
+          "turn_id": "T3_terrassa_busca_confirmacion_web",
+          "prompt": "busca informacion que confirme que no puedo subir el 15%",
+          "expected_specialists_exact": ["legal_arrendamientos"],
+          "expected_case_switched": false,
+          "must_contain_any": [
+            ["17.6", "articulo 17"],
+            ["10%", "10 %"]
+          ],
+          "must_not_contain": [
+            "tool_code",
+            "google_search.search",
+            "thought ",
+            ".md"
+          ],
+          "judge_criteria": [
+            "La respuesta es completamente limpia en español para el usuario final: NO contiene ninguna fuga de trazas internas del modelo ('tool_code', 'print(google_search...)', 'thought ...' en inglés).",
+            "Confirma con claridad jurídica (Art. 17.6 LAU / Ley 12/2023) por qué no se puede subir un 15 % en un nuevo contrato en Terrassa (zona tensionada), explicando el tope de la renta anterior y el máximo excepcional del 10 %."
+          ]
+        }
+      ]
+    }
+  ]
+}
