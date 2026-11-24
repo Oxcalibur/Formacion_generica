@@ -10,8 +10,9 @@ from logic import (
     calculate_roi_metrics, CalculadoraROI, graficar_break_even, graficar_evolucion_roi, 
     graficar_impacto_aprendizaje, log_user_prompt, get_logged_prompts, analyze_prompt_patterns, graficar_patrones_prompts, 
     calculate_historical_improvement_rate, load_multimedia_resources, extract_ephemeral_document, generate_pdf_bytes,
-    get_default_session_profile, aplicar_motor_a_perfil
+    get_default_session_profile, aplicar_motor_a_perfil, reset_case_state, split_profile_layers
 )
+from specialists import format_specialists_badge
 from auth import get_auth_manager
 from componentes_ui import hybrid_chat_input
 
@@ -208,44 +209,61 @@ with st.sidebar:
         mem_eval, motor_info = aplicar_motor_a_perfil(mem)
         st.session_state.user_profile_memory = mem_eval
 
-    # Memoria de perfil detectado en la conversación actual (visible solo cuando tiene datos confirmados)
+    # Memoria de sesión en 2 capas (Perfil persistente vs. Caso actual)
     mem_profile, motor_info = aplicar_motor_a_perfil(st.session_state.get("user_profile_memory", {}))
     st.session_state.user_profile_memory = mem_profile
-    filled_profile = {
-        k: v for k, v in mem_profile.items()
-        if v is not None and v != [] and v != ""
-    }
-    if filled_profile:
+    perfil_layer, caso_layer = split_profile_layers(mem_profile)
+    filled_user = {k: v for k, v in perfil_layer.items() if v is not None and v != [] and v != ""}
+    filled_case = {k: v for k, v in caso_layer.items() if v is not None and v != [] and v != ""}
+
+    if filled_user or filled_case:
         with st.expander(get_text("sidebar_profile_memory_expander"), expanded=True):
-            labels_map = {
+            user_labels = {
                 "arquetipo_detectado": "Arquetipo (validado)",
                 "titularidad": "Titularidad",
+                "no_residente": "No residente",
+                "residencia_fiscal_ccaa": "Residencia fiscal",
                 "gran_tenedor": "Gran tenedor (Ley 12/2023)",
                 "viviendas_total_espana": "Viviendas en España",
                 "viviendas_en_zona_tensionada": "Viviendas en zona tensionada",
                 "superficie_residencial_m2": "Superficie residencial (m²)",
                 "supera_1500_m2": "Supera 1.500 m²",
                 "tiene_copropiedad": "Copropiedad / proindiviso",
-                "residencia_fiscal_ccaa": "Residencia fiscal",
+            }
+            case_labels = {
                 "ubicacion_inmueble_ccaa": "CCAA inmueble",
                 "municipio_inmueble": "Municipio",
                 "zona_tensionada": "Zona tensionada",
                 "modalidad_alquiler": "Modalidad",
-                "no_residente": "No residente",
                 "fecha_inicio_contrato": "Inicio contrato",
             }
-            for key, label in labels_map.items():
-                if key in filled_profile:
-                    val = filled_profile[key]
-                    if isinstance(val, bool):
-                        val = "Sí" if val else "No"
-                    st.markdown(f"- **{label}:** `{val}`")
-            if motor_info.get("gran_tenedor") is None:
-                st.caption("⏳ Gran tenedor / arquetipo: pendiente de validar todos los umbrales legales (viviendas y 1.500 m²).")
-            if filled_profile.get("hechos_clave"):
-                st.markdown("**Hechos confirmados:**")
-                for h in filled_profile["hechos_clave"][-5:]:
-                    st.markdown(f"  - {h}")
+            if filled_user:
+                st.markdown("**👤 Perfil del usuario (persistente):**")
+                for key, label in user_labels.items():
+                    if key in filled_user:
+                        val = filled_user[key]
+                        if isinstance(val, bool):
+                            val = "Sí" if val else "No"
+                        st.markdown(f"- **{label}:** `{val}`")
+                if filled_user.get("hechos_perfil"):
+                    for h in filled_user["hechos_perfil"][-4:]:
+                        st.markdown(f"  - {h}")
+                if motor_info.get("gran_tenedor") is None and filled_case.get("zona_tensionada") is True:
+                    st.caption("⏳ Gran tenedor: pendiente de validar todos los umbrales legales (viviendas y 1.500 m²).")
+
+            if filled_case:
+                st.markdown("**🏠 Caso actual (este inmueble/operación):**")
+                if filled_case.get("especialistas_activos"):
+                    st.caption(f"Especialista: {format_specialists_badge(filled_case['especialistas_activos'])}")
+                for key, label in case_labels.items():
+                    if key in filled_case:
+                        val = filled_case[key]
+                        if isinstance(val, bool):
+                            val = "Sí" if val else "No"
+                        st.markdown(f"- **{label}:** `{val}`")
+                if filled_case.get("hechos_caso"):
+                    for h in filled_case["hechos_caso"][-5:]:
+                        st.markdown(f"  - {h}")
     
     st.divider()
     
@@ -298,6 +316,10 @@ if mode == get_text("nav_assistant"):
     # Mostrar historial
     for msg_idx, msg in enumerate(st.session_state.chat_history):
         with st.chat_message(msg["role"]):
+            if msg["role"] == "assistant" and msg.get("case_switched"):
+                st.caption(get_text("case_switched_notice"))
+            if msg["role"] == "assistant" and msg.get("specialists_badge"):
+                st.caption(f"Especialista activo: **{msg['specialists_badge']}**")
             st.markdown(msg["content"])
 
             # Botones de descarga en PDF para documentos formales generados (contratos, burofax, anexos...)
@@ -336,7 +358,7 @@ if mode == get_text("nav_assistant"):
 
     # Panel siempre visible justo encima del chat para adjuntar documento temporal (solo en memoria)
     with st.container(border=True):
-        col_title, col_export, col_new = st.columns([3.2, 1.4, 1.4])
+        col_title, col_export, col_case, col_new = st.columns([2.8, 1.15, 1.15, 1.2])
         with col_title:
             st.markdown(f"**{get_text('doc_uploader_title')}**")
             st.caption(get_text("doc_privacy_note"))
@@ -358,6 +380,17 @@ if mode == get_text("nav_assistant"):
                     use_container_width=True,
                     key=f"export_chat_{st.session_state.chat_session_id}",
                 )
+        with col_case:
+            if len(st.session_state.chat_history) > 1:
+                if st.button(get_text("doc_new_case_button"), use_container_width=True, help="Cambia de inmueble o tema limpiando el caso anterior pero manteniendo tu perfil base"):
+                    st.session_state.ephemeral_doc = None
+                    st.session_state.doc_uploader_key += 1
+                    st.session_state.user_profile_memory = reset_case_state(
+                        st.session_state.user_profile_memory,
+                        case_start_idx=len(st.session_state.chat_history),
+                    )
+                    st.toast(get_text("case_switched_notice"))
+                    st.rerun()
         with col_new:
             if st.button(get_text("doc_new_chat_button"), use_container_width=True):
                 st.session_state.chat_history = []
@@ -426,11 +459,9 @@ if mode == get_text("nav_assistant"):
             current_role = st.session_state.get("user_role", "Propietario / Inversor")
             role_context = (
                 f"\n\nCONTEXTO DE PERFIL EN LA PLATAFORMA (solo orientativo, NO asumir titularidad legal): {current_role}\n"
-                "INSTRUCCIÓN CRÍTICA: CERO ASUNCIONES. Nunca presupongas si el usuario actúa como persona física o persona jurídica (sociedad/entidad), "
-                "ni su régimen fiscal, ni su situación contractual: confírmalo cuando cambie la ley, la fiscalidad o la financiación. "
-                "Aplica el árbol de decisión condicional (1-2 preguntas pertinentes por turno, permitiendo contestar por texto o subir un documento concreto si lo tiene a mano). "
-                "NUNCA preguntes si es gran tenedor en consultas de subida de renta o nuevo contrato si la vivienda NO está en zona tensionada. "
-                "Verifica y muestra explícitamente los cálculos de fechas, fiscalidad o rentabilidad y aporta siempre alternativas estratégicas."
+                "INSTRUCCIÓN CRÍTICA: CERO ASUNCIONES y SEPARACIÓN DE CASOS. Respeta estrictamente el especialista activado en este turno: "
+                "no hagas preguntas irrelevantes en consultas operativas, no inventes tipos de interés ni plazos para refutar cálculos del usuario, "
+                "no arrastres hechos de un inmueble anterior a otro nuevo, y nunca muestres rutas ni archivos internos (.md)."
             )
             full_prompt = base_prompt + role_context
             
@@ -449,10 +480,12 @@ if mode == get_text("nav_assistant"):
             recommendations = response_data.get("recommendations", [])
             documents = response_data.get("documents", [])
             web_sources = response_data.get("web_sources", [])
+            specialists_badge = response_data.get("specialists_badge", "")
+            case_switched = bool(response_data.get("case_switched", False))
             if response_data.get("updated_profile"):
                 st.session_state.user_profile_memory = response_data["updated_profile"]
 
-        # Registrar turno completo (prompt + respuesta + session_id + arquetipo + nombre de doc si aplica) en Google Sheets para QA
+        # Registrar turno completo (prompt + respuesta + session_id + arquetipo + especialistas + nombre de doc si aplica) en Google Sheets para QA
         if CLIENT_CONFIG.get("log_prompts", False):
             worksheet = CLIENT_CONFIG.get("prompts_worksheet_name")
             if worksheet:
@@ -467,15 +500,18 @@ if mode == get_text("nav_assistant"):
                     doc_attached=doc_attached_label,
                     arquetipo=str(st.session_state.user_profile_memory.get("arquetipo_detectado") or ""),
                     username=st.session_state.get("username", "anonimo"),
+                    especialistas=specialists_badge,
                 )
 
-        # Guardar la respuesta estructurada (texto + recomendaciones + documentos PDF + fuentes web) en el historial
+        # Guardar la respuesta estructurada (texto + especialistas + recomendaciones + documentos PDF + fuentes web) en el historial
         st.session_state.chat_history.append({
             "role": "assistant",
             "content": text_response,
             "recommendations": recommendations,
             "documents": documents,
             "web_sources": web_sources,
+            "specialists_badge": specialists_badge,
+            "case_switched": case_switched,
         })
         st.rerun()
 # --- Pantalla 2: Dojo (Quiz) ---

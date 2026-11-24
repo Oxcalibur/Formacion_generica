@@ -40,6 +40,15 @@ except ImportError:
 from typing import List, Dict, Any, Optional, Tuple
 import datetime
 from config import CLIENT_CONFIG
+from specialists import (
+    detect_case_switch,
+    route_specialists,
+    format_specialists_badge,
+    get_priority_kb_folders,
+    build_specialist_prompt_section,
+    is_conceptual_question,
+    score_domains,
+)
 
 # Definición de Cinturones (Gamificación)
 BELTS = [
@@ -375,6 +384,7 @@ def retrieve_relevant_knowledge(
     query: str,
     history: Optional[list] = None,
     max_chars: int = 130000,
+    priority_folders: Optional[Tuple[str, ...]] = None,
 ) -> str:
     """
     Recupera contexto documental relevante recorriendo TODAS las carpetas de knowledge_base
@@ -464,8 +474,10 @@ def retrieve_relevant_knowledge(
             elif re.search(rf"\b{re.escape(ref)}\b", sec_norm):
                 score += 6.0
 
-        # Bonificación contextual según carpeta documental (01_ a 06_)
-        if is_fiscal_fin_inv and (sec["folder"].startswith("05_") or sec["folder"].startswith("06_")):
+        # Bonificación contextual según especialista activo y carpeta documental (01_ a 06_)
+        if priority_folders and sec["folder"] in priority_folders:
+            score += 3.5
+        elif is_fiscal_fin_inv and (sec["folder"].startswith("05_") or sec["folder"].startswith("06_")):
             score += 2.5
         elif sec["folder"].startswith("01_"):
             score += 0.4
@@ -1167,14 +1179,40 @@ def extract_ephemeral_document(uploaded_file) -> Dict[str, Any]:
     return {"error": f"Formato no soportado ({ext}). Usa PDF, DOCX, TXT, MD o imagen (PNG/JPG)."}
 
 
+# Capa 1: Perfil persistente del usuario (se mantiene entre casos distintos de la misma sesión)
+USER_PROFILE_KEYS = {
+    "arquetipo_detectado",
+    "titularidad",
+    "no_residente",
+    "residencia_fiscal_ccaa",
+    "viviendas_total_espana",
+    "viviendas_en_zona_tensionada",
+    "superficie_residencial_m2",
+    "supera_1500_m2",
+    "tiene_copropiedad",
+    "objetivo_inversor",
+    "gran_tenedor",
+    "hechos_perfil",
+}
+
+# Capa 2: Estado del caso actual (exclusivo de un inmueble/operación; se reinicia al cambiar de caso)
+CASE_ONLY_KEYS = {
+    "ubicacion_inmueble_ccaa",
+    "municipio_inmueble",
+    "zona_tensionada",
+    "modalidad_alquiler",
+    "fecha_inicio_contrato",
+    "hechos_caso",
+    "especialistas_activos",
+    "case_start_idx",
+}
+
 DEFAULT_SESSION_PROFILE: Dict[str, Any] = {
+    # Perfil persistente del usuario
     "arquetipo_detectado": None,
     "titularidad": None,
     "no_residente": None,
     "residencia_fiscal_ccaa": None,
-    "ubicacion_inmueble_ccaa": None,
-    "municipio_inmueble": None,
-    "zona_tensionada": None,
     "viviendas_total_espana": None,
     "viviendas_en_zona_tensionada": None,
     "superficie_residencial_m2": None,
@@ -1182,9 +1220,16 @@ DEFAULT_SESSION_PROFILE: Dict[str, Any] = {
     "tiene_copropiedad": None,
     "objetivo_inversor": None,
     "gran_tenedor": None,
+    "hechos_perfil": [],
+    # Estado efímero del caso actual
+    "ubicacion_inmueble_ccaa": None,
+    "municipio_inmueble": None,
+    "zona_tensionada": None,
     "modalidad_alquiler": None,
     "fecha_inicio_contrato": None,
-    "hechos_clave": [],
+    "hechos_caso": [],
+    "especialistas_activos": [],
+    "case_start_idx": 0,
 }
 
 ALLOWED_PROFILE_KEYS = set(DEFAULT_SESSION_PROFILE.keys())
@@ -1194,11 +1239,80 @@ CCAA_UMBRAL_5_ZONA_TENSIONADA = {"cataluna", "pais vasco", "navarra"}
 
 
 def get_default_session_profile() -> Dict[str, Any]:
-    """Devuelve una copia limpia del perfil de memoria de sesión."""
+    """Devuelve una copia limpia de la memoria de sesión en 2 capas (perfil + caso actual)."""
     return {
         k: (list(v) if isinstance(v, list) else v)
         for k, v in DEFAULT_SESSION_PROFILE.items()
     }
+
+
+def reset_case_state(profile: Optional[Dict[str, Any]], case_start_idx: int = 0) -> Dict[str, Any]:
+    """
+    Limpia exclusivamente los datos del caso/inmueble anterior (Capa 2) conservando
+    el perfil persistente del usuario (Capa 1: titularidad, residencia, cartera total).
+    """
+    clean = get_default_session_profile()
+    if isinstance(profile, dict):
+        for k in USER_PROFILE_KEYS:
+            if k in profile and profile[k] is not None:
+                clean[k] = list(profile[k]) if isinstance(profile[k], list) else profile[k]
+    clean["case_start_idx"] = max(0, int(case_start_idx or 0))
+    clean, _ = aplicar_motor_a_perfil(clean)
+    return clean
+
+
+def split_profile_layers(profile: Optional[Dict[str, Any]]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Separa la memoria de sesión en (perfil_usuario_persistente, caso_actual) para inyección y UI."""
+    src = profile if isinstance(profile, dict) else {}
+    perfil_usuario = {k: src.get(k) for k in sorted(USER_PROFILE_KEYS) if k in DEFAULT_SESSION_PROFILE}
+    caso_actual = {
+        k: src.get(k)
+        for k in sorted(CASE_ONLY_KEYS)
+        if k in DEFAULT_SESSION_PROFILE and k != "case_start_idx"
+    }
+    return perfil_usuario, caso_actual
+
+
+INTERNAL_KB_PATH_REPLACEMENTS = (
+    (
+        re.compile(r"(?:knowledge_base/)?04_Datos_Volatiles_y_CCAA/02_municipios_zona_tensionada\.md", re.IGNORECASE),
+        "Resoluciones autonómicas de declaración de zonas de mercado residencial tensionado (BOE / MIVAU)",
+    ),
+    (
+        re.compile(r"(?:knowledge_base/)?04_Datos_Volatiles_y_CCAA/01_IRAV_Zonas_Tensionadas_y_Fianzas_CCAA\.md", re.IGNORECASE),
+        "Normativa estatal de IRAV (INE), Ley 12/2023 y normativa autonómica de depósito de fianzas",
+    ),
+    (
+        re.compile(r"(?:knowledge_base/)?06_Estrategia_Inversion_y_Mercado/04_reglas_financiacion_y_apalancamiento\.md", re.IGNORECASE),
+        "Criterios bancarios habituales de financiación en España (DTI, LTV y CIRBE)",
+    ),
+    (
+        re.compile(r"(?:knowledge_base/)?06_Estrategia_Inversion_y_Mercado/03_framework_estrategia_inmobiliaria\.md", re.IGNORECASE),
+        "Criterios y métricas habituales de análisis de inversión inmobiliaria",
+    ),
+    (
+        re.compile(r"(?:knowledge_base/)?06_Estrategia_Inversion_y_Mercado/02_tabla_itp_y_gastos_compra_ccaa\.md", re.IGNORECASE),
+        "Normativa autonómica del ITP y AJD vigente",
+    ),
+    (
+        re.compile(r"(?:knowledge_base/)?06_Estrategia_Inversion_y_Mercado/01_guia_calculo_irpf_alquiler\.md", re.IGNORECASE),
+        "Ley 35/2006 del IRPF, Reglamento del IRPF (RD 439/2007) y doctrina DGT",
+    ),
+    (
+        re.compile(r"(?:knowledge_base/)?0[1-6]_[A-Za-z0-9_]+/[A-Za-z0-9_.-]+\.(?:md|txt|pdf)", re.IGNORECASE),
+        "Normativa y criterios técnicos vigentes en España",
+    ),
+)
+
+
+def _sanitize_internal_references(text: str) -> str:
+    """Elimina cualquier fuga accidental de rutas o ficheros internos .md antes de mostrar la respuesta."""
+    if not text:
+        return text
+    cleaned = text
+    for pattern, replacement in INTERNAL_KB_PATH_REPLACEMENTS:
+        cleaned = pattern.sub(replacement, cleaned)
+    return cleaned
 
 
 def _to_optional_int(val: Any) -> Optional[int]:
@@ -1356,10 +1470,14 @@ def aplicar_motor_a_perfil(profile: Dict[str, Any]) -> Tuple[Dict[str, Any], Dic
         for k in ALLOWED_PROFILE_KEYS:
             if k in profile and profile[k] is not None:
                 clean[k] = list(profile[k]) if isinstance(profile[k], list) else profile[k]
+        # Retrocompatibilidad: mapear antiguo hechos_clave a hechos_caso
+        if profile.get("hechos_clave") and not clean.get("hechos_caso"):
+            clean["hechos_caso"] = list(profile["hechos_clave"])
 
     clean["viviendas_total_espana"] = _to_optional_int(clean.get("viviendas_total_espana"))
     clean["viviendas_en_zona_tensionada"] = _to_optional_int(clean.get("viviendas_en_zona_tensionada"))
     clean["superficie_residencial_m2"] = _to_optional_float(clean.get("superficie_residencial_m2"))
+    clean["case_start_idx"] = max(0, int(clean.get("case_start_idx") or 0))
 
     eval_result = evaluar_calificacion_legal(clean)
     clean["gran_tenedor"] = eval_result["gran_tenedor"]
@@ -1368,7 +1486,11 @@ def aplicar_motor_a_perfil(profile: Dict[str, Any]) -> Tuple[Dict[str, Any], Dic
     return clean, eval_result
 
 
-def _extract_explicit_facts_from_user_text(user_text: str, profile: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_explicit_facts_from_user_text(
+    user_text: str,
+    profile: Dict[str, Any],
+    active_specialists: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     """
     Respaldo determinista (cero asunciones): extrae SOLO datos explícitamente mencionados
     por el usuario en su mensaje si el modelo no emitió [PROFILE_UPDATE] en ese turno.
@@ -1381,11 +1503,13 @@ def _extract_explicit_facts_from_user_text(user_text: str, profile: Dict[str, An
 
     # 1. Municipios y CCAA explícitos (con estado oficial de zona tensionada)
     municipios_map = {
+        "vallecas": ("Madrid (Vallecas)", "Comunidad de Madrid", False),
         "talavera de la reina": ("Talavera de la Reina", "Castilla-La Mancha", False),
         "talavera": ("Talavera de la Reina", "Castilla-La Mancha", False),
         "guadalajara": ("Guadalajara", "Castilla-La Mancha", False),
         "toledo": ("Toledo", "Castilla-La Mancha", False),
         "alcala de henares": ("Alcalá de Henares", "Comunidad de Madrid", False),
+        "alcala": ("Alcalá de Henares", "Comunidad de Madrid", False),
         "terrassa": ("Terrassa", "Cataluña", True),
         "sabadell": ("Sabadell", "Cataluña", True),
         "barcelona": ("Barcelona", "Cataluña", True),
@@ -1433,30 +1557,40 @@ def _extract_explicit_facts_from_user_text(user_text: str, profile: Dict[str, An
     elif "residente en espana" in norm or "residente fiscal en espana" in norm:
         updated["no_residente"] = False
 
+    # Detectar todos los municipios distintos mencionados: solo fijar municipio_inmueble si analiza UN único municipio
+    matched_munis = []
+    seen_muni_names = set()
     for kw, (muni, ccaa, zt) in municipios_map.items():
         if re.search(rf"\b{re.escape(kw)}\b", norm):
-            # Evitar pisar inmueble si solo se mencionó tras "vivo en <ciudad>"
             if res_match and kw in res_match.group(1) and not re.search(rf"(?:piso|vivienda|inmueble|comprar|alquilar).{{0,35}}\b{re.escape(kw)}\b", norm):
                 continue
-            updated["municipio_inmueble"] = muni
-            updated["ubicacion_inmueble_ccaa"] = ccaa
-            updated["zona_tensionada"] = zt
-            break
+            if muni not in seen_muni_names:
+                seen_muni_names.add(muni)
+                matched_munis.append((muni, ccaa, zt))
 
-    if not updated.get("ubicacion_inmueble_ccaa") and re.search(r"(?:piso|vivienda|inmueble|comprar|alquilar).{0,35}\bmadrid\b", norm):
+    if len(matched_munis) == 1:
+        muni, ccaa, zt = matched_munis[0]
+        updated["municipio_inmueble"] = muni
+        updated["ubicacion_inmueble_ccaa"] = ccaa
+        updated["zona_tensionada"] = zt
+    elif len(matched_munis) == 0 and not updated.get("ubicacion_inmueble_ccaa") and re.search(r"(?:piso|vivienda|inmueble|comprar|alquilar).{0,35}\bmadrid\b", norm):
         updated["municipio_inmueble"] = "Madrid"
         updated["ubicacion_inmueble_ccaa"] = "Comunidad de Madrid"
         updated["zona_tensionada"] = False
 
-    # 2. Modalidad de alquiler explícita
-    if re.search(r"\bhabitacion(?:es)?\b", norm):
-        updated["modalidad_alquiler"] = "habitaciones"
-    elif "vivienda habitual" in norm:
-        updated["modalidad_alquiler"] = "vivienda_habitual"
-    elif "alquiler de temporada" in norm or "alquiler temporal" in norm:
-        updated["modalidad_alquiler"] = "temporada"
-    elif re.search(r"\blocal(?:es)?\s+comercial", norm):
-        updated["modalidad_alquiler"] = "local"
+    # 2. Modalidad de alquiler explícita (evitar fijarla si el usuario solo compara tradicional vs habitaciones)
+    is_comparing_modalities = bool(
+        re.search(r"\btradicional\b", norm) and re.search(r"\bhabitacion(?:es)?\b", norm)
+    )
+    if not is_comparing_modalities:
+        if re.search(r"\b(?:alquiler\s+(?:por|de)\s+habitacion(?:es)?|alquilar\s+por\s+habitacion(?:es)?)\b", norm):
+            updated["modalidad_alquiler"] = "habitaciones"
+        elif "vivienda habitual" in norm and "habitacion" not in norm:
+            updated["modalidad_alquiler"] = "vivienda_habitual"
+        elif "alquiler de temporada" in norm or "alquiler temporal" in norm:
+            updated["modalidad_alquiler"] = "temporada"
+        elif re.search(r"\blocal(?:es)?\s+comercial", norm):
+            updated["modalidad_alquiler"] = "local"
 
     # 3. Titularidad explícita (solo si el usuario la declara)
     if any(p in norm for p in ("persona fisica", "a titulo personal", "como particular", "a mi nombre")):
@@ -1467,7 +1601,9 @@ def _extract_explicit_facts_from_user_text(user_text: str, profile: Dict[str, An
         updated["titularidad"] = "comunidad_bienes"
 
     # 4. Datos atómicos de cartera, m² y copropiedad (SOLO si el usuario los declara explícitamente)
-    if any(p in norm for p in ("invertir", "inversion", "prestamo personal", "roce", "rentabilidad", "otro piso", "segundo piso", "comprar un piso", "comprar vivienda")):
+    if active_specialists != ["operativa_gestion"] and any(
+        p in norm for p in ("invertir", "inversion", "prestamo personal", "roce", "rentabilidad", "otro piso", "segundo piso", "comprar un piso", "comprar vivienda")
+    ):
         updated["objetivo_inversor"] = True
 
     if any(p in norm for p in ("proindiviso", "copropiedad", "heredado con", "herencia con", "al 50%", "al 50 %", "con mi hermano", "con mis hermanos", "a medias con")):
@@ -1543,24 +1679,32 @@ def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str
             decoder = json.JSONDecoder()
             update_obj, end_pos = decoder.raw_decode(parse_src[brace_idx:])
             if isinstance(update_obj, dict):
+                # Si el modelo señala cambio de caso, reiniciar la Capa 2 antes de aplicar los datos del nuevo caso
+                if update_obj.get("reset_caso") is True:
+                    merged = reset_case_state(merged, case_start_idx=merged.get("case_start_idx", 0))
+
                 for k, v in update_obj.items():
-                    if k not in ALLOWED_PROFILE_KEYS or v is None:
+                    if k == "reset_caso" or v is None:
+                        continue
+                    # Mapear hechos_clave (formato antiguo) -> hechos_caso (Capa 2, se limpia al cambiar de caso)
+                    target_key = "hechos_caso" if k == "hechos_clave" else k
+                    if target_key not in ALLOWED_PROFILE_KEYS:
                         continue
                     # Los campos derivados los calcula EXCLUSIVAMENTE el motor determinista
-                    if k in ENGINE_DERIVED_KEYS:
+                    if target_key in ENGINE_DERIVED_KEYS or target_key in ("especialistas_activos", "case_start_idx"):
                         continue
-                    if k == "hechos_clave":
+                    if target_key in ("hechos_caso", "hechos_perfil"):
                         if isinstance(v, list):
-                            existing = list(merged.get("hechos_clave") or [])
+                            existing = list(merged.get(target_key) or [])
                             for fact in v:
                                 fact_str = str(fact).strip()
                                 if fact_str and fact_str not in existing:
                                     existing.append(fact_str)
-                            merged["hechos_clave"] = existing[-12:]
+                            merged[target_key] = existing[-10:]
                     else:
                         if isinstance(v, str) and not v.strip():
                             continue
-                        merged[k] = v
+                        merged[target_key] = v
 
             # Conservar cualquier texto posterior al bloque JSON (ej. [RESOURCES] si venía después), limpiando backticks sueltos
             remainder = parse_src[brace_idx + end_pos:].lstrip()
@@ -1593,17 +1737,21 @@ WEB_SEARCH_TRIGGERS = (
     "irav", "impuesto de sociedades", "impuesto sobre sociedades", "modelo 200",
     "modelo 210", "irnr", "no residente", "patrimonio", "edav", "deduccion autonomica",
     "tipo reducido", "bonificacion", "serpavi", "plusvalia", "iva ", "iva?",
+    # Jerga especializada de inversión inmobiliaria, financiación y gestión
+    "en paralelo", "hipotecas en paralelo", "flipping", "house hacking", "rent to rent",
+    "rent-to-rent", "nuda propiedad", "pignoracion", "pignorar", "subrogacion",
+    "novacion hipotecaria", "zazume", "alquiler seguro", "que es para ti", "que significa",
 )
 
 
 def _debe_activar_busqueda_web(user_input: str, history: Optional[list] = None) -> Tuple[bool, str]:
     """
     Decide de forma determinista cuándo activar Google Search Grounding en Gemini
-    para verificar doctrina (DGT/TEAC/TS), discrepancias, ordenanzas municipales o datos vivos
-    antes de arriesgarse a responder de memoria o inventar criterios.
+    para verificar doctrina (DGT/TEAC/TS), discrepancias, ordenanzas municipales,
+    jerga inversora o datos vivos antes de arriesgarse a responder de memoria o inventar criterios.
     """
     text = (user_input or "").strip()
-    if len(text) < 12:
+    if len(text) < 8:
         return False, ""
 
     norm = _normalize_search_text(text)
@@ -1615,6 +1763,9 @@ def _debe_activar_busqueda_web(user_input: str, history: Optional[list] = None) 
     for trigger in WEB_SEARCH_TRIGGERS:
         if trigger in norm:
             return True, f"disparador:{trigger.strip()}"
+
+    if is_conceptual_question(text):
+        return True, "pregunta_conceptual"
 
     return False, ""
 
@@ -1657,10 +1808,48 @@ def get_chat_response(
     ephemeral_doc: Optional[Dict[str, Any]] = None,
     session_profile: Optional[Dict[str, Any]] = None,
 ) -> dict:
-    """Obtiene respuesta del chat de Gemini con memoria de perfil, coherencia multi-turno y recuperación multi-carpeta."""
+    """
+    Obtiene respuesta del chat de Gemini con:
+      - Router determinista de 4 especialistas componibles (Opción A, 1 sola llamada API)
+      - Memoria en 2 capas (`perfil_usuario` persistente vs `caso_actual` efímero)
+      - Detector automático de cambio de caso con corte de historial anti-contaminación
+      - Motor determinista de calificación legal + verificación web selectiva
+    """
     current_profile, _ = aplicar_motor_a_perfil(session_profile or {})
-    # Incorporar hechos explícitos del mensaje actual ANTES de evaluar el motor para este turno
-    current_profile = _extract_explicit_facts_from_user_text(user_input, current_profile)
+    prev_specialists = list(current_profile.get("especialistas_activos") or [])
+    prior_user_turns = sum(1 for m in (history or [])[:-1] if m.get("role") == "user")
+
+    # 1. Detectar cambio de caso / asunto ANTES de extraer datos o heredar contexto previo
+    turn_domain_scores = score_domains(user_input)
+    case_switched, case_switch_reason = detect_case_switch(
+        user_input=user_input,
+        current_profile=current_profile,
+        prev_specialists=prev_specialists,
+        new_scores=turn_domain_scores,
+        has_prior_turns=prior_user_turns > 0,
+    )
+    if case_switched:
+        new_start_idx = max(0, len(history) - 1) if history else 0
+        current_profile = reset_case_state(current_profile, case_start_idx=new_start_idx)
+
+    # 2. Enrutar a 1 especialista principal (+ opcional 1 secundario en casos híbridos)
+    routing = route_specialists(
+        user_input=user_input,
+        prev_specialists=None if case_switched else prev_specialists,
+        case_switched=case_switched,
+    )
+    active_specialists = routing["active_ids"]
+    specialists_badge = format_specialists_badge(active_specialists)
+    conceptual_mode = bool(routing.get("conceptual"))
+    if not conceptual_mode:
+        current_profile["especialistas_activos"] = list(active_specialists)
+
+    # 3. Incorporar hechos explícitos del mensaje actual ANTES de evaluar el motor para este turno
+    current_profile = _extract_explicit_facts_from_user_text(
+        user_input,
+        current_profile,
+        active_specialists=active_specialists,
+    )
     current_profile, motor_eval = aplicar_motor_a_perfil(current_profile)
 
     client = init_gemini()
@@ -1669,34 +1858,55 @@ def get_chat_response(
             "text": "Modo demostración: Configura tu API Key para chatear con Gemini real.",
             "recommendations": [],
             "documents": [],
+            "web_sources": [],
             "updated_profile": current_profile,
+            "specialists": active_specialists,
+            "specialists_badge": specialists_badge,
+            "case_switched": case_switched,
+            "case_switch_reason": case_switch_reason,
         }
     
     model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
     
-    # Serializar e inyectar el índice multimedia y la memoria de perfil en el prompt del sistema
+    # 4. Serializar e inyectar el módulo de especialistas activos + memoria separada en 2 capas
     local_resources_str = json.dumps(multimedia_index, ensure_ascii=False) if multimedia_index else "No hay recursos locales disponibles."
-    profile_json_str = json.dumps(current_profile, ensure_ascii=False, indent=2)
+    perfil_usuario_layer, caso_actual_layer = split_profile_layers(current_profile)
+    user_profile_json_str = json.dumps(perfil_usuario_layer, ensure_ascii=False, indent=2)
+    case_state_json_str = json.dumps(caso_actual_layer, ensure_ascii=False, indent=2)
+    specialist_prompt_str = build_specialist_prompt_section(active_specialists, conceptual=conceptual_mode)
+
     system_instruction = (
         system_instruction
         .replace("{multimedia_index_placeholder}", local_resources_str)
-        .replace("{session_profile_placeholder}", profile_json_str)
+        .replace("{specialist_prompt_placeholder}", specialist_prompt_str)
+        .replace("{session_user_profile_placeholder}", user_profile_json_str)
+        .replace("{session_case_state_placeholder}", case_state_json_str)
+        .replace("{session_profile_placeholder}", json.dumps(current_profile, ensure_ascii=False, indent=2))
     )
-    if "<memoria_perfil_sesion>" not in system_instruction:
-        system_instruction += f"\n\n<memoria_perfil_sesion>\n{profile_json_str}\n</memoria_perfil_sesion>"
+    if "<perfil_usuario_persistente>" not in system_instruction:
+        system_instruction += (
+            f"\n\n{specialist_prompt_str}\n\n"
+            f"<perfil_usuario_persistente>\n{user_profile_json_str}\n</perfil_usuario_persistente>\n"
+            f"<caso_actual_solo_esta_operacion>\n{case_state_json_str}\n</caso_actual_solo_esta_operacion>"
+        )
 
-    # Determinar si preguntar por Gran Tenedor / 1.500 m² es realmente pertinente en ESTE turno
+    # 5. Determinar si preguntar por Gran Tenedor / 1.500 m² es realmente pertinente en ESTE turno
     norm_turn_text = _normalize_search_text(user_input or "")
     triggers_gt_ahora = (
         "gran tenedor", "desahucio", "impago", "sin pagar", "vulnerab",
         "serpavi", "zona tensionada", "conciliacion", "intermediacion",
         "1500", "1.500", "patrimonio", "edav", "sociedad patrimonial",
     )
-    requiere_gt_ahora = bool(
-        current_profile.get("zona_tensionada") is True
-        or any(t in norm_turn_text for t in triggers_gt_ahora)
-    )
+    if active_specialists == ["operativa_gestion"] or conceptual_mode:
+        requiere_gt_ahora = False
+    else:
+        requiere_gt_ahora = bool(
+            current_profile.get("zona_tensionada") is True
+            or any(t in norm_turn_text for t in triggers_gt_ahora)
+        )
     motor_eval["preguntar_gran_tenedor_ahora"] = requiere_gt_ahora
+    motor_eval["especialistas_activos"] = active_specialists
+    motor_eval["cambio_de_caso_detectado"] = case_switched
     motor_json_str = json.dumps(motor_eval, ensure_ascii=False, indent=2)
 
     if requiere_gt_ahora:
@@ -1711,6 +1921,14 @@ def get_chat_response(
             "o por los 1.500 m² (no afectan a la consulta actual y resulta molesto repetirlos). NUNCA menciones 'completar tu perfil para la plataforma' ni insistas en cerrar un arquetipo interno."
         )
 
+    case_switch_note = ""
+    if case_switched:
+        case_switch_note = (
+            "\n5. **CAMBIO DE CASO DETECTADO AUTOMÁTICAMENTE:** El usuario ha abierto un asunto/inmueble NUEVO. "
+            "Ignora por completo detalles de inmuebles anteriores (como seguros de hogar, gestores externos o modalidades previas). "
+            "Trata este caso desde cero usando únicamente los hechos confirmados en este nuevo asunto."
+        )
+
     motor_block = (
         "\n\n<estado_motor_calificacion_legal>\n"
         f"{motor_json_str}\n"
@@ -1720,6 +1938,7 @@ def get_chat_response(
         f"{regla_gt_turno}\n"
         "3. Si `arquetipo_detectado` es `null`, NO inventes ni escribas un arquetipo en el 'Resumen de tu caso'.\n"
         "4. En `[PROFILE_UPDATE]`, reporta los DATOS ATÓMICOS confirmados por el usuario en texto plano SIN envolver el bloque en comillas invertidas (`) ni en bloques ```."
+        f"{case_switch_note}"
     )
 
     # Reglas técnicas de búsqueda externa válidas para TODOS los ámbitos del asistente
@@ -1732,10 +1951,16 @@ def get_chat_response(
         "- Si no es necesario un vídeo o no existe ninguno actualizado, omite completamente el bloque `[RESOURCES]`."
     )
 
-    # Construir historial estructurado para Gemini (Últimas 20 interacciones para mantener coherencia completa)
+    # 6. Recortar historial ESTRICTAMENTE al caso activo (evita contaminación de casos anteriores en la misma sesión)
+    case_start_idx = max(0, int(current_profile.get("case_start_idx") or 0))
+    active_history = history[case_start_idx:] if history and case_start_idx < len(history) else (history or [])
+    if not active_history or active_history[-1].get("role") != "user":
+        active_history = [{"role": "user", "content": user_input}]
+
+    # Construir historial estructurado para Gemini (Últimas 20 interacciones del CASO ACTIVO)
     contents = []
     expected_role = "user"
-    for msg in history[-20:]:
+    for msg in active_history[-20:]:
         role = "user" if msg["role"] == "user" else "model"
         
         # Regla estricta de Gemini: Debe empezar por 'user' y alternar
@@ -1748,13 +1973,15 @@ def get_chat_response(
             )
             expected_role = "model" if role == "user" else "user"
 
-    # Enriquecer la query de recuperación documental con el perfil ya confirmado (coherencia entre temas)
-    profile_keywords = " ".join(
-        str(v) for k, v in current_profile.items()
-        if v is not None and k != "hechos_clave" and not isinstance(v, bool)
-    )
-    if current_profile.get("hechos_clave"):
-        profile_keywords += " " + " ".join(current_profile["hechos_clave"][-5:])
+    # Enriquecer la query de recuperación documental solo con el caso activo + perfil relevante
+    case_keywords_parts = []
+    for k in ("municipio_inmueble", "ubicacion_inmueble_ccaa", "modalidad_alquiler", "titularidad"):
+        v = current_profile.get(k)
+        if v is not None and not isinstance(v, bool):
+            case_keywords_parts.append(str(v))
+    if current_profile.get("hechos_caso"):
+        case_keywords_parts.extend(current_profile["hechos_caso"][-4:])
+    profile_keywords = " ".join(case_keywords_parts)
 
     # Inyectar documento temporal del usuario (solo en memoria para esta sesión; nunca persistido)
     ephemeral_doc_block = ""
@@ -1788,13 +2015,25 @@ def get_chat_response(
                 )
     
     resolved_kb_folder = kb_folder or CLIENT_CONFIG.get("knowledge_base_folder")
+    priority_folders = get_priority_kb_folders(active_specialists)
     if resolved_kb_folder and os.path.exists(resolved_kb_folder):
-        contexto_seguro = retrieve_relevant_knowledge(
-            resolved_kb_folder,
-            retrieval_query,
-            history=history,
-            max_chars=130000,
-        )
+        if active_specialists == ["operativa_gestion"]:
+            # Consulta puramente operativa: no sobrecargar el contexto con toda la normativa LAU/IRPF
+            contexto_seguro = retrieve_relevant_knowledge(
+                resolved_kb_folder,
+                retrieval_query,
+                history=active_history,
+                max_chars=18000,
+                priority_folders=priority_folders,
+            )
+        else:
+            contexto_seguro = retrieve_relevant_knowledge(
+                resolved_kb_folder,
+                retrieval_query,
+                history=active_history,
+                max_chars=130000,
+                priority_folders=priority_folders,
+            )
     else:
         contexto_seguro = knowledge_context[:130000] if knowledge_context else "No hay documentos cargados."
 
@@ -1803,16 +2042,16 @@ def get_chat_response(
         f"\n\n[FECHA ACTUAL DE REFERENCIA]\n"
         f"Hoy es {fecha_hoy_str}. Utiliza SIEMPRE esta fecha para verificar años transcurridos, "
         f"vencimientos de prórroga obligatoria (5 años persona física / 7 años persona jurídica) y plazos de preaviso.\n\n"
-        "[ACTUALIZACIÓN OBLIGATORIA DE MEMORIA DE PERFIL — INCLUIDA FASE 1]\n"
-        "Al FINAL de tu respuesta (incluso si todavía estás en Fase 1 haciendo preguntas de triaje), SIEMPRE que el usuario "
-        "haya mencionado CUALQUIER dato concreto (municipio, CCAA, modalidad de alquiler, titularidad, residencia, intención de inversión, "
-        "fecha de contrato o hechos clave), DEBES incluir el bloque oculto:\n"
+        "[ACTUALIZACIÓN OBLIGATORIA DE MEMORIA EN 2 CAPAS — INCLUIDA FASE 1]\n"
+        "Al FINAL de tu respuesta (incluso en Fase 1), si el usuario ha confirmado datos concretos en ESTE turno, incluye:\n"
         "[PROFILE_UPDATE]\n"
         '{"campo_confirmado": "valor"}\n'
-        "Incluye ÚNICAMENTE datos explícitamente confirmados por el usuario o su documento (NUNCA supongas titularidad ni gran_tenedor si no lo dijo)."
+        "Reglas: (1) Incluye ÚNICAMENTE datos confirmados por el usuario o su documento (NUNCA asumas titularidad, tipo de préstamo ni gran_tenedor). "
+        "(2) Guarda datos exclusivos de este inmueble (seguro, gestor, precio, reforma) en `hechos_caso`, NUNCA en `hechos_perfil`. "
+        "(3) Si el usuario cambia de asunto/inmueble, incluye `\"reset_caso\": true`."
     )
 
-    use_web_search, web_search_reason = _debe_activar_busqueda_web(user_input, history)
+    use_web_search, web_search_reason = _debe_activar_busqueda_web(user_input, active_history)
     web_search_block = ""
     if use_web_search and hasattr(types, "GoogleSearch"):
         web_search_block = (
@@ -1820,18 +2059,19 @@ def get_chat_response(
             f"Motivo: `{web_search_reason}`. Tienes disponible la herramienta de búsqueda web (Google Search).\n"
             "REGLAS ESTRICTAS DE USO:\n"
             "1. Úsala ANTES de afirmar o negar categóricamente cualquier criterio interpretativo (consultas vinculantes DGT, TEAC, Tribunal Supremo, Audiencias Provinciales), "
-            "ordenanza municipal (habitabilidad, empadronamiento, licencias), dato mensual actualizado (IRAV del INE, tipos reducidos autonómicos) o régimen no cubierto en `knowledge_base/` (Impuesto sobre Sociedades, IRNR, Patrimonio).\n"
-            "2. JERARQUÍA DE FUENTES: La normativa estatal consolidada de `01_Normativa_Estatal_Vigente` (LAU vigente, RDL 29/2026, Ley 12/2023) prevalece SIEMPRE sobre blogs antiguos de internet. Prioriza fuentes oficiales (`boe.es`, `agenciatributaria.gob.es`, `petete.tributos.hacienda.gob.es`, `ine.es`, `mivau.gob.es`, `poderjudicial.es`, portales autonómicos/municipales).\n"
-            "3. Si el usuario cuestiona un criterio o aporta una consulta/experiencia distinta, contrasta activamente si existe un cambio de criterio reciente antes de responder. Nunca inventes códigos de consultas ni sentencias."
+            "ordenanza municipal (habitabilidad, empadronamiento, licencias), jerga o estrategia de inversión/financiación en España (ej. hipotecas en paralelo, pignoración, flipping), "
+            "dato mensual actualizado (IRAV del INE, tipos reducidos autonómicos) o régimen no cubierto en la base documental (Impuesto sobre Sociedades, IRNR, Patrimonio).\n"
+            "2. JERARQUÍA DE FUENTES: La normativa estatal consolidada (LAU vigente, RDL 29/2026, Ley 12/2023) prevalece SIEMPRE sobre blogs antiguos de internet. Prioriza fuentes oficiales (`boe.es`, `agenciatributaria.gob.es`, `petete.tributos.hacienda.gob.es`, `ine.es`, `mivau.gob.es`, `poderjudicial.es`, portales autonómicos/municipales).\n"
+            "3. Si el usuario cuestiona un criterio o aporta una consulta/experiencia distinta, contrasta activamente antes de responder. Nunca inventes códigos de consultas ni sentencias."
         )
 
     full_system_instruction = (
         f"{system_instruction}{motor_block}{web_search_block}{fecha_block}{external_hint}{ephemeral_doc_block}\n\n"
-        f"Información de Contexto (Base Documental en knowledge_base):\n{contexto_seguro}"
+        f"Información de Contexto (Base Documental interna — NUNCA muestres nombres de archivos .md ni rutas de carpetas al usuario):\n{contexto_seguro}"
     )
 
     recent_user_context = " ".join(
-        [user_input or ""] + [m.get("content", "") for m in history[-6:] if m.get("role") == "user"]
+        [user_input or ""] + [m.get("content", "") for m in active_history[-6:] if m.get("role") == "user"]
     )
     needs_post_oct_2026 = bool(requiere_video_post_oct_2026 and requiere_video_post_oct_2026(recent_user_context))
     
@@ -1948,6 +2188,8 @@ def get_chat_response(
         
         # Extraer documentos descargables [DOCUMENT title="..."]...[/DOCUMENT] si los hay
         text_part, generated_docs = _extract_generated_documents(text_part)
+        # Sanear cualquier fuga accidental de rutas/archivos internos .md
+        text_part = _sanitize_internal_references(text_part)
 
         return {
             "text": text_part,
@@ -1955,6 +2197,10 @@ def get_chat_response(
             "documents": generated_docs,
             "web_sources": web_sources,
             "updated_profile": updated_profile,
+            "specialists": active_specialists,
+            "specialists_badge": specialists_badge,
+            "case_switched": case_switched,
+            "case_switch_reason": case_switch_reason,
         }
     except Exception as e:
         return {
@@ -1963,6 +2209,10 @@ def get_chat_response(
             "documents": [],
             "web_sources": [],
             "updated_profile": current_profile,
+            "specialists": active_specialists,
+            "specialists_badge": specialists_badge,
+            "case_switched": case_switched,
+            "case_switch_reason": case_switch_reason,
         }
 
 @st.cache_data(show_spinner=False, ttl=86400)
@@ -2061,9 +2311,10 @@ def log_user_prompt(
     doc_attached: Any = False,
     arquetipo: str = "",
     username: str = "",
+    especialistas: str = "",
 ):
     """
-    Registra un turno completo de conversación (session_id + timestamp + username + role + arquetipo + prompt + response + doc_attached)
+    Registra un turno completo de conversación (session_id + timestamp + username + role + arquetipo + especialistas + prompt + response + doc_attached)
     en Google Sheets para trazabilidad y auditoría QA.
     Nunca registra el contenido de documentos adjuntados por el usuario (solo 'Sí (nombre)' o 'No').
     """
@@ -2074,7 +2325,7 @@ def log_user_prompt(
     if not prompt_text or not worksheet_name:
         return
 
-    target_cols = ["session_id", "timestamp", "username", "role", "arquetipo", "prompt", "response", "doc_attached"]
+    target_cols = ["session_id", "timestamp", "username", "role", "arquetipo", "especialistas", "prompt", "response", "doc_attached"]
 
     if isinstance(doc_attached, str) and doc_attached.strip():
         doc_flag = f"Sí ({doc_attached.strip()})" if doc_attached.strip() not in ("Sí", "No") else doc_attached.strip()
@@ -2094,6 +2345,7 @@ def log_user_prompt(
                 "username": (username or "").strip() or "anonimo",
                 "role": role,
                 "arquetipo": arquetipo or "",
+                "especialistas": especialistas or "",
                 "prompt": prompt_text,
                 "response": (response_text or "")[:15000],
                 "doc_attached": doc_flag,
