@@ -1784,15 +1784,28 @@ def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str
     return cleaned_fallback, merged
 
 
+USER_CHALLENGE_TRIGGERS = (
+    # Rechazo directo o cuestionamiento natural del usuario
+    "desacuerdo", "no estoy de acuerdo", "eso no es asi", "no es asi",
+    "te equivocas", "estas equivocado", "no es cierto", "no es verdad",
+    "es falso", "no me cuadra", "dudo que", "estas seguro", "seguro?",
+    "no creo que sea asi", "me parece que no", "estas mal", "es incorrecto",
+    # Cita a terceros, fuentes externas o petición de prueba/contraste
+    "me han dicho", "me dijeron", "mi asesor", "mi abogado", "mi gestor",
+    "he leido que", "tengo entendido que", "estoy convencido", "me consta que",
+    "en internet pone", "en otro sitio", "segun otro", "eso ha cambiado",
+    "ya no es asi", "de donde sacas", "demuestramelo", "pruebamelo",
+    "en mi experiencia", "en nuestra experiencia",
+)
+
 WEB_SEARCH_TRIGGERS = (
     # Doctrina, jurisprudencia y criterios interpretativos (DGT, TEAC, tribunales)
     "dgt", "consulta vinculante", "tributos", "teac", "tribunal supremo", "audiencia provincial",
     "sentencia", "jurisprudencia", "inspeccion", "criterio", "aeat", "hacienda", "desgravacion",
     "reduccion", "habitaciones",
-    # Desacuerdo del usuario o petición explícita de contrastar/buscar fuentes
-    "desacuerdo", "no estoy de acuerdo", "busca", "buscar", "contrast", "verifica",
-    "documentarte", "donde estas buscando", "cambio de criterio", "actualizado", "vigente hoy",
-    "ultimo dato", "ultima consulta", "reciente", "en mi experiencia", "en nuestra experiencia",
+    # Petición explícita de buscar/verificar fuentes o actualidad
+    "busca", "buscar", "contrast", "verifica", "documentarte", "donde estas buscando",
+    "cambio de criterio", "actualizado", "vigente hoy", "ultimo dato", "ultima consulta", "reciente",
     # Datos volátiles, municipales o regímenes no completos en knowledge_base/
     "ordenanza", "empadron", "habitabilidad", "licencia", "ayuntamiento", "turistic",
     "irav", "impuesto de sociedades", "impuesto sobre sociedades", "modelo 200",
@@ -1808,23 +1821,33 @@ WEB_SEARCH_TRIGGERS = (
 def _debe_activar_busqueda_web(user_input: str, history: Optional[list] = None) -> Tuple[bool, str]:
     """
     Decide de forma determinista cuándo activar Google Search Grounding en Gemini
-    para verificar doctrina (DGT/TEAC/TS), discrepancias, ordenanzas municipales,
-    jerga inversora o datos vivos antes de arriesgarse a responder de memoria o inventar criterios.
+    para verificar retos/discrepancias del usuario, doctrina (DGT/TEAC/TS),
+    ordenanzas municipales, jerga inversora o datos vivos antes de responder de memoria.
     """
     text = (user_input or "").strip()
-    if len(text) < 8:
+    if len(text) < 6:
         return False, ""
 
     norm = _normalize_search_text(text)
 
-    # Detectar código explícito de consulta DGT (ej. V2457-25) o referencia STS/SAP/BOE
+    # 1. Reto o desacuerdo del usuario (prioridad máxima para contrastar y no ser terco ni complaciente)
+    for challenge in USER_CHALLENGE_TRIGGERS:
+        if challenge in norm:
+            return True, f"reto_o_discrepancia_usuario:{challenge.strip()}"
+
+    if len(text) < 8:
+        return False, ""
+
+    # 2. Detectar código explícito de consulta DGT (ej. V2457-25) o referencia STS/SAP/BOE
     if re.search(r"\bv\d{3,4}-\d{2}\b", norm) or re.search(r"\b(?:sts|sap|stsj|teac)\b", norm):
         return True, "referencia_doctrina_o_jurisprudencia"
 
+    # 3. Disparadores temáticos o de verificación
     for trigger in WEB_SEARCH_TRIGGERS:
         if trigger in norm:
             return True, f"disparador:{trigger.strip()}"
 
+    # 4. Preguntas conceptuales / definición de jerga
     if is_conceptual_question(text):
         return True, "pregunta_conceptual"
 
@@ -2127,6 +2150,15 @@ def get_chat_response(
     use_web_search, web_search_reason = _debe_activar_busqueda_web(user_input, active_history)
     web_search_block = ""
     if use_web_search and hasattr(types, "GoogleSearch"):
+        challenge_protocol = ""
+        if web_search_reason.startswith("reto_o_discrepancia_usuario"):
+            challenge_protocol = (
+                "\n4. **PROTOCOLO ANTE RETO O DESACUERDO DEL USUARIO (NI TERCO NI COMPLACIENTE):**\n"
+                "   - Contrasta activamente la afirmación en disputa con búsqueda web en fuentes oficiales Y con la normativa consolidada vigente antes de contestar.\n"
+                "   - **Si el usuario tiene razón** (cambio de criterio reciente, excepción o matiz que omitimos): reconócelo de forma directa y transparente, corrige tu afirmación anterior y explica el criterio actualizado con su base oficial.\n"
+                "   - **Si tu afirmación anterior era correcta y el usuario parte de un mito o norma derogada**: mantén el criterio con tacto y **refútalo claramente con el artículo exacto o resolución oficial**; NUNCA cedas ni le des la razón solo por complacerle.\n"
+                "   - **Si existe controversia jurídica o fiscal real** (criterios dispares entre Audiencias o Hacienda): expón ambas posturas con honestidad."
+            )
         web_search_block = (
             "\n\n[VERIFICACIÓN WEB EN VIVO ACTIVADA]\n"
             f"Motivo: `{web_search_reason}`. Tienes disponible la herramienta de búsqueda web (Google Search).\n"
@@ -2135,7 +2167,8 @@ def get_chat_response(
             "ordenanza municipal (habitabilidad, empadronamiento, licencias), jerga o estrategia de inversión/financiación en España (ej. hipotecas en paralelo, pignoración, flipping), "
             "dato mensual actualizado (IRAV del INE, tipos reducidos autonómicos) o régimen no cubierto en la base documental (Impuesto sobre Sociedades, IRNR, Patrimonio).\n"
             "2. JERARQUÍA DE FUENTES: La normativa estatal consolidada (LAU vigente, RDL 29/2026, Ley 12/2023) prevalece SIEMPRE sobre blogs antiguos de internet. Prioriza fuentes oficiales (`boe.es`, `agenciatributaria.gob.es`, `petete.tributos.hacienda.gob.es`, `ine.es`, `mivau.gob.es`, `poderjudicial.es`, portales autonómicos/municipales).\n"
-            "3. Si el usuario cuestiona un criterio o aporta una consulta/experiencia distinta, contrasta activamente antes de responder. Nunca inventes códigos de consultas ni sentencias."
+            "3. Nunca inventes códigos de consultas ni sentencias."
+            f"{challenge_protocol}"
         )
 
     full_system_instruction = (

@@ -224,6 +224,12 @@ def _check_turn_assertions(
         if bool(conceptual) != bool(turn_spec["expected_conceptual"]):
             errors.append(f"conceptual esperado={turn_spec['expected_conceptual']}, obtenido={conceptual}")
 
+    if "expected_web_search" in turn_spec:
+        from logic import _debe_activar_busqueda_web
+        ws_on, _ = _debe_activar_busqueda_web(turn_spec["prompt"])
+        if bool(ws_on) != bool(turn_spec["expected_web_search"]):
+            errors.append(f"web_search esperado={turn_spec['expected_web_search']}, obtenido={ws_on}")
+
     if "expected_user_profile" in turn_spec:
         for k, exp_v in turn_spec["expected_user_profile"].items():
             got_v = updated_profile.get(k)
