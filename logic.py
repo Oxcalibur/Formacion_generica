@@ -1074,11 +1074,84 @@ def _extract_generated_documents(text: str) -> tuple:
 MAX_EPHEMERAL_FILE_BYTES = 15 * 1024 * 1024  # 15 MB máximo en memoria
 
 
+PDF_WATERMARK_LINE_RE = re.compile(
+    r"(?:click\s+to\s+buy|buy\s+now|pdf[-\s]?xchange|tracker[-\s]?software|camscanner|"
+    r"scanned\s+(?:with|by)|escaneado\s+con|adobe\s+scan|foxit|nitro\s+pdf|wps\s+office|"
+    r"ilovepdf|smallpdf|evaluation\s+(?:only|version|copy)|trial\s+version|demo\s+version|"
+    r"unregistered|watermark|https?://\S+|www\.\S+|^(?:pag(?:ina)?\.?|page)?\s*\d+(?:\s*(?:/|de|of)\s*\d+)?\s*$)",
+    re.IGNORECASE,
+)
+
+
+def _is_pdf_text_extraction_usable(page_texts: List[str]) -> Tuple[bool, str, str]:
+    """
+    Evalúa página por página si la extracción de texto de pypdf contiene contenido real
+    o si se trata de un PDF escaneado con marcas de agua (ej. 'Click to BUY NOW! PDF-XChange Editor'),
+    números de página repetidos o un PDF híbrido (portada digital + páginas escaneadas).
+    Devuelve (es_texto_usable, texto_limpio, motivo).
+    """
+    if not page_texts:
+        return False, "", "sin_paginas"
+
+    num_pages = len(page_texts)
+
+    # 1. Detectar líneas idénticas repetidas en >=50% de páginas (marcas de agua, cabeceras/pies repetitivos)
+    repeated_lines = set()
+    if num_pages >= 2:
+        line_page_counts: Dict[str, int] = {}
+        for ptext in page_texts:
+            seen_in_page = {
+                re.sub(r"\s+", " ", ln).strip().lower()
+                for ln in (ptext or "").splitlines()
+                if ln.strip()
+            }
+            for norm_ln in seen_in_page:
+                line_page_counts[norm_ln] = line_page_counts.get(norm_ln, 0) + 1
+        threshold = max(2, math.ceil(num_pages * 0.5))
+        repeated_lines = {ln for ln, cnt in line_page_counts.items() if cnt >= threshold}
+
+    # 2. Limpiar ruido de marcas de agua y líneas repetitivas por página
+    cleaned_pages: List[str] = []
+    usable_pages = 0
+    total_meaningful_chars = 0
+
+    for ptext in page_texts:
+        kept_lines = []
+        for raw_ln in (ptext or "").splitlines():
+            ln = re.sub(r"\s+", " ", raw_ln).strip()
+            if not ln:
+                continue
+            if ln.lower() in repeated_lines:
+                continue
+            if PDF_WATERMARK_LINE_RE.search(ln):
+                continue
+            kept_lines.append(ln)
+        page_clean = "\n".join(kept_lines).strip()
+        cleaned_pages.append(page_clean)
+        meaningful_chars = len(re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]", page_clean))
+        total_meaningful_chars += meaningful_chars
+        if meaningful_chars >= 100:
+            usable_pages += 1
+
+    avg_chars_per_page = total_meaningful_chars / max(1, num_pages)
+    usable_ratio = usable_pages / max(1, num_pages)
+    combined_clean = "\n\n".join(p for p in cleaned_pages if p).strip()
+
+    if total_meaningful_chars < 200:
+        return False, combined_clean, "texto_real_insuficiente_o_solo_marca_de_agua"
+    if avg_chars_per_page < 180:
+        return False, combined_clean, "densidad_texto_baja_pdf_escaneado"
+    if num_pages >= 2 and usable_ratio < 0.70:
+        return False, combined_clean, "pdf_hibrido_con_paginas_escaneadas"
+
+    return True, combined_clean, "texto_nativo_completo"
+
+
 def extract_ephemeral_document(uploaded_file) -> Dict[str, Any]:
     """
     Lee un documento subido por el usuario ÚNICAMENTE en memoria (sin guardarlo en disco ni en caché)
     para usarlo solo durante la conversación actual.
-    Soporta PDF (texto o escaneado), DOCX, TXT, MD e imágenes (PNG/JPG/WEBP).
+    Soporta PDF (texto nativo, escaneado, con marcas de agua o híbrido), DOCX, TXT, MD e imágenes (PNG/JPG/WEBP).
     """
     if uploaded_file is None:
         return {}
@@ -1109,32 +1182,37 @@ def extract_ephemeral_document(uploaded_file) -> Dict[str, Any]:
             "summary": f"Imagen adjunta en memoria ({len(raw_bytes) // 1024} KB)",
         }
 
-    # 2. PDF (extracción de texto en memoria; si es escaneado, se pasa binario a Gemini)
+    # 2. PDF (validación inteligente por página: si es escaneado, tiene solo marcas de agua o es híbrido -> lectura visual directa)
     if ext == ".pdf":
-        extracted_text = ""
+        page_texts: List[str] = []
+        raw_extracted_text = ""
         if pypdf:
             try:
                 reader = pypdf.PdfReader(io.BytesIO(raw_bytes))
-                extracted_text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+                page_texts = [(page.extract_text() or "").strip() for page in reader.pages]
+                raw_extracted_text = "\n\n".join(t for t in page_texts if t).strip()
             except Exception:
-                extracted_text = ""
+                page_texts = []
+                raw_extracted_text = ""
 
-        if len(extracted_text) >= 40:
+        is_usable, _, reason = _is_pdf_text_extraction_usable(page_texts)
+        if is_usable and raw_extracted_text:
             return {
                 "name": filename,
                 "mode": "text",
                 "mime_type": "application/pdf",
                 "raw_bytes": None,
-                "text": extracted_text,
-                "summary": f"PDF leído en memoria ({len(extracted_text):,} caracteres)",
+                "text": raw_extracted_text,
+                "summary": f"PDF leído en memoria ({len(page_texts)} págs., {len(raw_extracted_text):,} caracteres)",
             }
+        num_pages_info = f"{len(page_texts)} págs., " if page_texts else ""
         return {
             "name": filename,
             "mode": "binary",
             "mime_type": "application/pdf",
             "raw_bytes": raw_bytes,
             "text": "",
-            "summary": f"PDF escaneado listo para lectura visual en memoria ({len(raw_bytes) // 1024} KB)",
+            "summary": f"PDF escaneado/visual listo para lectura directa en memoria ({num_pages_info}{max(1, len(raw_bytes) // 1024)} KB)",
         }
 
     # 3. Word (.docx) usando solo librería estándar (zipfile + ElementTree)
@@ -1811,6 +1889,7 @@ WEB_SEARCH_TRIGGERS = (
     "irav", "impuesto de sociedades", "impuesto sobre sociedades", "modelo 200",
     "modelo 210", "irnr", "no residente", "patrimonio", "edav", "deduccion autonomica",
     "tipo reducido", "bonificacion", "serpavi", "plusvalia", "iva ", "iva?",
+    "vpo", "vivienda protegida", "proteccion oficial", "descalificacion", "descalificar",
     # Jerga especializada de inversión inmobiliaria, financiación y gestión
     "en paralelo", "hipotecas en paralelo", "flipping", "house hacking", "rent to rent",
     "rent-to-rent", "nuda propiedad", "pignoracion", "pignorar", "subrogacion",
