@@ -296,6 +296,26 @@ def _parse_service_account_credentials(raw_text: str) -> Dict[str, Any]:
     )
 
 
+def _extract_clean_secret_value(raw_val: str) -> str:
+    """Limpia espacios, comillas o asignaciones TOML tipo KEY = \"valor\" en secrets."""
+    val = (raw_val or "").strip()
+    if "=" in val and not val.startswith("http"):
+        # Ej. spreadsheet = "https://..." o GOOGLE_API_KEY = "AIza..."
+        _, rhs = val.split("=", 1)
+        val = rhs.strip()
+    return val.strip().strip('"').strip("'").strip()
+
+
+def _extract_spreadsheet_id(raw_url_or_id: str) -> str:
+    """Extrae el ID limpio de Google Sheets desde una URL, asignación TOML o ID directo."""
+    import re
+    cleaned = _extract_clean_secret_value(raw_url_or_id)
+    m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]{20,})", cleaned)
+    if m:
+        return m.group(1)
+    return cleaned
+
+
 def connect_spreadsheet() -> gspread.Spreadsheet:
     """Conecta con el Google Sheet usando credenciales de cuenta de servicio desde variables de entorno."""
     sa_json_raw = os.environ.get("GSHEETS_SERVICE_ACCOUNT_JSON", "").strip()
@@ -310,9 +330,8 @@ def connect_spreadsheet() -> gspread.Spreadsheet:
     creds = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
     gc = gspread.authorize(creds)
 
-    if spreadsheet_url.startswith("http"):
-        return gc.open_by_url(spreadsheet_url)
-    return gc.open_by_key(spreadsheet_url)
+    sheet_id = _extract_spreadsheet_id(spreadsheet_url)
+    return gc.open_by_key(sheet_id)
 
 
 def get_or_create_qa_worksheet(sh: gspread.Spreadsheet, qa_ws_name: str) -> gspread.Worksheet:
@@ -364,7 +383,7 @@ def run_gemini_qa_audit(
     period_end: str,
 ) -> Dict[str, str]:
     """Ejecuta el análisis QA con Gemini y devuelve campos estructurados + informe Markdown."""
-    api_key = os.environ.get("GOOGLE_API_KEY", "").strip()
+    api_key = _extract_clean_secret_value(os.environ.get("GOOGLE_API_KEY", ""))
     if not api_key:
         raise ValueError("Falta la variable de entorno GOOGLE_API_KEY.")
 
