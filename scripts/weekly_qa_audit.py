@@ -34,8 +34,48 @@ from google.oauth2.service_account import Credentials
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KB_DIR = os.path.join(BASE_DIR, "knowledge_base")
 CONFIG_PATH = os.path.join(BASE_DIR, "config.py")
+SPECIALISTS_PATH = os.path.join(BASE_DIR, "specialists.py")
 REPORT_OUTPUT_PATH = os.path.join(BASE_DIR, "qa_report_latest.md")
 META_OUTPUT_PATH = os.path.join(BASE_DIR, "qa_report_meta.json")
+LOCAL_SECRETS_PATH = os.path.join(BASE_DIR, ".streamlit", "secrets.toml")
+
+
+def _load_local_streamlit_secrets() -> None:
+    """
+    Si faltan variables de entorno en ejecución local, carga automáticamente
+    GOOGLE_API_KEY, GSHEETS_SPREADSHEET_URL y GSHEETS_SERVICE_ACCOUNT_JSON desde
+    `.streamlit/secrets.toml` (sin imprimir nunca secretos en consola).
+    """
+    if not os.path.exists(LOCAL_SECRETS_PATH):
+        return
+    try:
+        import tomllib  # Python 3.11+
+        with open(LOCAL_SECRETS_PATH, "rb") as f:
+            secrets = tomllib.load(f)
+    except Exception:
+        return
+
+    if not os.environ.get("GOOGLE_API_KEY"):
+        for k, v in secrets.items():
+            if k.startswith("GOOGLE_API_KEY") and isinstance(v, str) and v.strip():
+                os.environ["GOOGLE_API_KEY"] = v.strip()
+                break
+
+    gs_conf = (secrets.get("connections") or {}).get("gsheets") or {}
+    if isinstance(gs_conf, dict) and gs_conf:
+        if not os.environ.get("GSHEETS_SPREADSHEET_URL") and gs_conf.get("spreadsheet"):
+            os.environ["GSHEETS_SPREADSHEET_URL"] = str(gs_conf["spreadsheet"]).strip()
+        if not os.environ.get("GSHEETS_SERVICE_ACCOUNT_JSON") and gs_conf.get("private_key") and gs_conf.get("client_email"):
+            sa_keys = (
+                "type", "project_id", "private_key_id", "private_key", "client_email",
+                "client_id", "auth_uri", "token_uri", "auth_provider_x509_cert_url",
+                "client_x509_cert_url", "universe_domain",
+            )
+            sa_obj = {k: gs_conf[k] for k in sa_keys if k in gs_conf}
+            sa_obj.setdefault("type", "service_account")
+            sa_obj.setdefault("auth_uri", "https://accounts.google.com/o/oauth2/auth")
+            sa_obj.setdefault("token_uri", "https://oauth2.googleapis.com/token")
+            os.environ["GSHEETS_SERVICE_ACCOUNT_JSON"] = json.dumps(sa_obj)
 
 QA_HEADERS = [
     "audit_date",
@@ -87,6 +127,10 @@ def filter_unread_rows(
     df = df[df["_parsed_ts"].notna()].copy()
     df = df[df["prompt"].astype(str).str.strip() != ""].copy()
 
+    # Excluir ejecuciones sintéticas de regresión automática (qa_auto) para auditar solo usuarios reales
+    if "username" in df.columns:
+        df = df[df["username"].astype(str).str.strip().str.lower() != "qa_auto"].copy()
+
     if df.empty:
         return pd.DataFrame(), last_timestamp_str
 
@@ -121,22 +165,40 @@ def build_kb_inventory_summary(kb_dir: str = KB_DIR) -> str:
     return "\n".join(lines) if lines else "Sin subcarpetas."
 
 
-def load_current_system_prompt_excerpt(config_path: str = CONFIG_PATH, max_chars: int = 12000) -> str:
-    """Lee el system_prompt actual en config.py para no repetir reglas ya implementadas."""
-    if not os.path.exists(config_path):
-        return ""
-    try:
-        with open(config_path, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
-        marker = '"system_prompt": """'
-        start = content.find(marker)
-        if start == -1:
-            return ""
-        end = content.find('"""', start + len(marker))
-        prompt_txt = content[start + len(marker):end] if end != -1 else content[start + len(marker):]
-        return prompt_txt.strip()[:max_chars]
-    except Exception:
-        return ""
+def load_current_system_prompt_excerpt(
+    config_path: str = CONFIG_PATH,
+    specialists_path: str = SPECIALISTS_PATH,
+    max_chars: int = 16000,
+) -> str:
+    """Lee el núcleo de config.py y los 4 especialistas de specialists.py para no proponer reglas ya implementadas."""
+    parts = []
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            marker = '"system_prompt": """'
+            start = content.find(marker)
+            if start != -1:
+                end = content.find('"""', start + len(marker))
+                prompt_txt = content[start + len(marker):end] if end != -1 else content[start + len(marker):]
+                parts.append("--- NÚCLEO (config.py) ---\n" + prompt_txt.strip()[:8000])
+        except Exception:
+            pass
+
+    if os.path.exists(specialists_path):
+        try:
+            with open(specialists_path, "r", encoding="utf-8", errors="replace") as f:
+                spec_content = f.read()
+            # Extraer únicamente el bloque SPECIALIST_META (reglas de los 4 especialistas)
+            s_start = spec_content.find("SPECIALIST_META")
+            s_end = spec_content.find("DOMAIN_SIGNALS")
+            if s_start != -1:
+                spec_excerpt = spec_content[s_start:s_end] if s_end != -1 else spec_content[s_start:]
+                parts.append("--- ESPECIALISTAS ACTIVABLES (specialists.py) ---\n" + spec_excerpt.strip()[:8000])
+        except Exception:
+            pass
+
+    return "\n\n".join(parts)[:max_chars]
 
 
 def format_conversations_for_audit(df_new: pd.DataFrame, max_chars: int = 85000) -> Tuple[str, int]:
@@ -167,11 +229,12 @@ def format_conversations_for_audit(df_new: pd.DataFrame, max_chars: int = 85000)
             uname = str(row.get("username") or "").strip()
             role = str(row.get("role") or "").strip()
             arq = str(row.get("arquetipo") or "").strip()
+            espec = str(row.get("especialistas") or "").strip()
             doc = str(row.get("doc_attached") or "").strip()
             prompt = str(row.get("prompt") or "").strip()
             resp = str(row.get("response") or "").strip()
 
-            meta = f"[{ts_str}] Usuario: {uname or 'N/A'} | Perfil: {role or 'N/A'} | Arquetipo: {arq or 'vacío'} | Doc: {doc or 'N/A'}"
+            meta = f"[{ts_str}] Usuario: {uname or 'N/A'} | Perfil: {role or 'N/A'} | Arquetipo: {arq or 'vacío'} | Especialistas: {espec or 'N/A'} | Doc: {doc or 'N/A'}"
             lines.append(meta)
             lines.append(f"  USUARIO: {prompt[:1500]}")
             if resp and resp.lower() != "nan":
@@ -264,15 +327,21 @@ def run_gemini_qa_audit(
     kb_inventory = build_kb_inventory_summary()
     current_prompt = load_current_system_prompt_excerpt()
 
+    fecha_hoy = datetime.datetime.now().strftime("%d/%m/%Y")
     audit_prompt = f"""
 Eres un **Auditor Senior de Calidad (QA) de Agentes IA Inmobiliarios en España** (derecho LAU/RDL 29/2026, fiscalidad IRPF/ITP, financiación LCCI/CIRBE e inversión inmobiliaria).
 
-Vas a auditar **{rows_count} nuevas interacciones** agrupadas en **{sessions_count} sesiones** ocurridas entre `{period_start}` y `{period_end}` (solo logs NO analizados previamente).
+CONTEXTO TEMPORAL Y NORMATIVO DE ESTE SISTEMA:
+- La fecha actual es **{fecha_hoy}**.
+- El **Real Decreto-ley 29/2026** (en vigor desde el 15/11/2026) y la consulta vinculante **DGT V2457-25** son normativa y doctrina oficial vigente cargada en `knowledge_base/`: **NO los marques nunca como futuros o inexistentes**.
+- La arquitectura actual usa un núcleo común (`config.py`) + 4 especialistas componibles (`specialists.py`) + memoria en 2 capas (`perfil_usuario` vs. `caso_actual`).
+
+Vas a auditar **{rows_count} nuevas interacciones** agrupadas en **{sessions_count} sesiones** ocurridas entre `{period_start}` y `{period_end}` (solo logs NO analizados previamente, excluyendo pruebas automáticas `qa_auto`).
 
 ### DOCUMENTOS QUE YA EXISTEN HOY EN `knowledge_base/`:
 {kb_inventory}
 
-### EXTRACTOS DEL `system_prompt` ACTUAL EN `config.py` (NO propongas reglas que ya existan tal cual, salvo si ves que el modelo las incumple y hay que reforzarlas):
+### EXTRACTOS DE LAS INSTRUCCIONES ACTUALES (`config.py` + `specialists.py`) — NO propongas reglas que ya existan tal cual, salvo si ves que el modelo las incumple y hay que reforzarlas:
 {current_prompt}
 
 ### CONVERSACIONES NUEVAS A AUDITAR:
@@ -280,15 +349,16 @@ Vas a auditar **{rows_count} nuevas interacciones** agrupadas en **{sessions_cou
 
 ### TU TAREA:
 Analiza con máximo rigor las conversaciones y responde ÚNICAMENTE con un JSON válido con exactamente estas 4 claves de texto:
-1. `"summary"`: Resumen ejecutivo breve (3-5 líneas) con temas predominantes, arquetipos vistos y calidad general.
-2. `"prompt_improvements"`: Lista concisa en texto plano de mejoras concretas para `config.py` (o "Sin cambios urgentes en prompt" si todo fue sólido).
+1. `"summary"`: Resumen ejecutivo breve (3-5 líneas) con temas predominantes, especialistas/arquetipos vistos y calidad general.
+2. `"prompt_improvements"`: Lista concisa en texto plano de mejoras concretas para `config.py` o `specialists.py` (o "Sin cambios urgentes en prompt" si todo fue sólido).
 3. `"kb_gaps"`: Lista concisa de documentos o datos que faltan en `knowledge_base/` y en qué carpeta (`01_`..`06_`) deberían añadirse.
 4. `"full_report_markdown"`: Informe completo en Markdown bien estructurado con estas secciones:
-   - `## 1. Resumen ejecutivo` (sesiones, turnos, arquetipos detectados, nivel de fiabilidad)
-   - `## 2. Fallos críticos y contradicciones detectadas` (asunciones no confirmadas, errores de fechas/cálculos, respuestas vagas, incumplimientos del triaje — citando la sesión/hora exacta)
-   - `## 3. Propuestas concretas de ajuste para config.py` (reglas listas para revisar y aplicar)
+   - `## 1. Resumen ejecutivo` (sesiones, turnos, usuarios/arquetipos/especialistas detectados, nivel de fiabilidad)
+   - `## 2. Fallos críticos y contradicciones detectadas` (asunciones no confirmadas, arrastre entre casos, errores de fechas/cálculos, fugas de trazas/rutas, incumplimientos del triaje — citando la sesión/hora exacta)
+   - `## 3. Propuestas concretas de ajuste para config.py / specialists.py / logic.py` (reglas listas para revisar y aplicar)
    - `## 4. Huecos detectados en knowledge_base/` (qué fichero concreto añadir y en qué carpeta `01_`..`06_`)
    - `## 5. Observaciones de UX y telemetría` (duplicados, arquetipo vacío, uso de documentos adjuntos, tiempos)
+   - `## 6. Nuevos casos recomendados para tests/qa_cases.json` (1–3 escenarios concretos derivados de fallos reales de esta semana para prevenir regresiones)
 
 IMPORTANTE: Sé riguroso y específico. Nunca inventes conversaciones que no estén en los logs. Si las conversaciones fueron correctas, dilo claramente.
 """
@@ -310,7 +380,16 @@ IMPORTANTE: Sé riguroso y específico. Nunca inventes conversaciones que no est
         config=types.GenerateContentConfig(**cfg_kwargs),
     )
 
-    raw_text = (response.text or "").strip()
+    visible_parts = []
+    try:
+        for part in (response.candidates[0].content.parts or []):
+            if getattr(part, "thought", False):
+                continue
+            if getattr(part, "text", None):
+                visible_parts.append(part.text)
+    except Exception:
+        pass
+    raw_text = ("".join(visible_parts) if visible_parts else (response.text or "")).strip()
     if raw_text.startswith("```"):
         raw_text = raw_text.replace("```json", "").replace("```", "").strip()
 
@@ -324,6 +403,7 @@ IMPORTANTE: Sé riguroso y específico. Nunca inventes conversaciones que no est
 
 
 def main():
+    _load_local_streamlit_secrets()
     parser = argparse.ArgumentParser(description="Auditoría QA semanal incremental sobre Prompts_Inmobiliaria.")
     parser.add_argument("--dry-run", action="store_true", help="Analiza sin actualizar QA_Aprendizajes.")
     args = parser.parse_args()
@@ -334,8 +414,16 @@ def main():
 
     print(f"🔍 Iniciando auditoría QA incremental (dry_run={dry_run})...")
     sh = connect_spreadsheet()
-    qa_ws = get_or_create_qa_worksheet(sh, qa_ws_name)
-    last_cursor = read_last_cursor(qa_ws)
+    if dry_run:
+        try:
+            qa_ws = sh.worksheet(qa_ws_name)
+            last_cursor = read_last_cursor(qa_ws)
+        except gspread.WorksheetNotFound:
+            qa_ws = None
+            last_cursor = None
+    else:
+        qa_ws = get_or_create_qa_worksheet(sh, qa_ws_name)
+        last_cursor = read_last_cursor(qa_ws)
     print(f"📌 Último timestamp auditado en '{qa_ws_name}': {last_cursor or 'NINGUNO (primera ejecución)'}")
 
     df_prompts = read_worksheet_df(sh, prompts_ws_name)
