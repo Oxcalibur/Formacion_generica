@@ -251,6 +251,51 @@ def format_conversations_for_audit(df_new: pd.DataFrame, max_chars: int = 85000)
     return "\n".join(blocks), len(grouped)
 
 
+def _parse_service_account_credentials(raw_text: str) -> Dict[str, Any]:
+    """
+    Parsea las credenciales de cuenta de servicio aceptando tanto formato JSON estándar
+    como el formato TOML de Streamlit (`.streamlit/secrets.toml`, con o sin cabecera [connections.gsheets]).
+    """
+    text = (raw_text or "").strip()
+    if not text:
+        raise ValueError("Falta la variable de entorno GSHEETS_SERVICE_ACCOUNT_JSON.")
+
+    # 1. Intentar JSON estándar primero
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict):
+            return obj
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Fallback automático: formato TOML de Streamlit Secrets (Python 3.11+ tomllib)
+    try:
+        import tomllib
+        parsed = tomllib.loads(text)
+        if isinstance(parsed, dict):
+            gs = (parsed.get("connections") or {}).get("gsheets") if "connections" in parsed else parsed
+            if isinstance(gs, dict) and gs.get("private_key") and gs.get("client_email"):
+                sa_keys = (
+                    "type", "project_id", "private_key_id", "private_key", "client_email",
+                    "client_id", "auth_uri", "token_uri", "auth_provider_x509_cert_url",
+                    "client_x509_cert_url", "universe_domain",
+                )
+                sa_obj = {k: gs[k] for k in sa_keys if k in gs}
+                if isinstance(sa_obj.get("private_key"), str):
+                    sa_obj["private_key"] = sa_obj["private_key"].replace("\\n", "\n")
+                sa_obj.setdefault("type", "service_account")
+                sa_obj.setdefault("auth_uri", "https://accounts.google.com/o/oauth2/auth")
+                sa_obj.setdefault("token_uri", "https://oauth2.googleapis.com/token")
+                return sa_obj
+    except Exception:
+        pass
+
+    raise ValueError(
+        "GSHEETS_SERVICE_ACCOUNT_JSON no tiene formato JSON válido ni TOML de cuenta de servicio "
+        "(debe contener 'client_email' y 'private_key')."
+    )
+
+
 def connect_spreadsheet() -> gspread.Spreadsheet:
     """Conecta con el Google Sheet usando credenciales de cuenta de servicio desde variables de entorno."""
     sa_json_raw = os.environ.get("GSHEETS_SERVICE_ACCOUNT_JSON", "").strip()
@@ -261,7 +306,7 @@ def connect_spreadsheet() -> gspread.Spreadsheet:
     if not spreadsheet_url:
         raise ValueError("Falta la variable de entorno GSHEETS_SPREADSHEET_URL.")
 
-    sa_info = json.loads(sa_json_raw)
+    sa_info = _parse_service_account_credentials(sa_json_raw)
     creds = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
     gc = gspread.authorize(creds)
 
