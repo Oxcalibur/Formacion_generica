@@ -280,6 +280,56 @@
           ]
         }
       ]
+    },
+    {
+      "id": "gran_tenedor_superficie_y_sabadell",
+      "name": "Casos del Issue #1: Gran Tenedor por >1.500 m² (+ mito Valencia) y confirmación directa Sabadell",
+      "description": "Casos nacidos directamente de la primera auditoría QA semanal: verifica Gran Tenedor por superficie con <10 viviendas, desmentido de Valencia como zona tensionada y confirmación directa de Sabadell desde la KB.",
+      "turns": [
+        {
+          "turn_id": "T1_gran_tenedor_1600m2_valencia_mito",
+          "prompt": "Actúo como persona física residente en España. Tengo 8 viviendas residenciales en total en España (incluyendo mi vivienda habitual) que suman 1.600 m² construidos residenciales. Quiero alquilar un piso en Valencia, que es zona tensionada. ¿Soy gran tenedor?",
+          "expected_specialists_exact": ["legal_arrendamientos"],
+          "expected_case_switched": false,
+          "expected_user_profile": {
+            "titularidad": "persona_fisica",
+            "no_residente": false,
+            "viviendas_total_espana": 8,
+            "supera_1500_m2": true,
+            "gran_tenedor": true
+          },
+          "must_contain_any": [
+            ["1.500", "1500"],
+            ["no esta declarada", "no esta declarado", "no ha sido declarada", "no es zona", "no es una zona"]
+          ],
+          "must_not_contain": [
+            "no eres gran tenedor",
+            ".md"
+          ],
+          "judge_criteria": [
+            "Confirma claramente que SÍ es Gran Tenedor conforme al Art. 3.k de la Ley 12/2023 por superar los 1.500 m² construidos residenciales (1.600 m²), aunque tenga menos de 10 viviendas.",
+            "Corrige con claridad y tacto al usuario indicando que Valencia NO está declarada zona de mercado residencial tensionado (sin citar archivos internos .md)."
+          ]
+        },
+        {
+          "turn_id": "T2_sabadell_zona_tensionada_directa",
+          "prompt": "Cambiando de tema: quiero comprar un piso en Sabadell para alquilarlo. ¿Está declarado zona tensionada?",
+          "expected_specialists_include": ["legal_arrendamientos"],
+          "expected_case_switched": true,
+          "must_contain_any": [
+            ["sabadell"],
+            ["tensionada", "tensionado"]
+          ],
+          "must_not_contain": [
+            "no tengo acceso",
+            "04_datos_volatiles",
+            ".md"
+          ],
+          "judge_criteria": [
+            "Confirma de forma directa y segura que Sabadell SÍ está declarada zona de mercado residencial tensionado (resolución oficial de la Generalitat de Catalunya / BOE / MIVAU), sin decir 'no tengo acceso' ni derivar al usuario a buscarlo por su cuenta ni citar rutas .md."
+          ]
+        }
+      ]
     }
   ]
 }

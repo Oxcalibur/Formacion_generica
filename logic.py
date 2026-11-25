@@ -1754,7 +1754,10 @@ def _extract_explicit_facts_from_user_text(
     elif re.search(r"(?:supero|mas\s+de|paso\s+de|encima\s+de)\s+1\.?500\s*m", norm):
         updated["supera_1500_m2"] = True
     else:
-        m2_match = re.search(r"(?:total(?:es)?|suma(?:n)?|tengo|superficie).{0,25}\b(\d{1,2}\.?\d{3}|\d{3,4})\s*m(?:2|²|etros)\b", norm)
+        m2_match = re.search(
+            r"(?:total(?:es)?|suma(?:n)?|tengo|superficie).{0,25}?(?<!\d)(?<!\d\.)(\d{1,2}\.\d{3}|\d{2,5})\s*(?:m2\b|m²|metros\b)",
+            norm,
+        )
         if m2_match:
             parsed_m2 = _to_optional_float(m2_match.group(1))
             if parsed_m2 is not None:

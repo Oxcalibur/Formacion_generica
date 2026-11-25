@@ -12,6 +12,8 @@ create_client.py
 qa_report_latest.md
 qa_report_meta.json
 qa_regression_latest.md
+qa_autofix_meta.json
+qa_autofix_summary.md
 
 # Secretos locales (NUNCA subir a Git)
 .streamlit/secrets.toml
