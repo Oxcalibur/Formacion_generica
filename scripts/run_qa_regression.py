@@ -99,7 +99,7 @@ def _evaluate_with_llm_judge(
     judge_prompt = f"""Eres un auditor QA estricto para un Asesor Inmobiliario Integral en España.
 CONTEXTO TEMPORAL Y NORMATIVO DE ESTE ENTORNO DE PRUEBAS:
 - La fecha actual es {fecha_hoy}.
-- El Real Decreto-ley 29/2026 (en vigor desde el 15/11/2026) y la consulta vinculante DGT V2457-25 forman parte de la base normativa oficial vigente del sistema: NO los penalices como inexistentes ni futuros.
+- El Real Decreto-ley 29/2026 (BOE-A-2026-20823, en vigor desde el 08/10/2026 y convalidado por el Congreso), la Ley 11/2026 de Cataluña (DOGC 13/07/2026) y la consulta vinculante DGT V2457-25 forman parte de la base normativa oficial vigente del sistema: NO los penalices como inexistentes ni futuros. (El RDL 28/2026 fue derogado / no convalidado y no llegó a entrar en vigor).
 
 Evalúa si la RESPUESTA DEL ASISTENTE cumple TODOS los criterios de calidad listados abajo.
 
@@ -226,7 +226,7 @@ def _check_turn_assertions(
 
     if "expected_web_search" in turn_spec:
         from logic import _debe_activar_busqueda_web
-        ws_on, _ = _debe_activar_busqueda_web(turn_spec["prompt"])
+        ws_on, _ = _debe_activar_busqueda_web(turn_spec["prompt"], active_specialists=active_specialists)
         if bool(ws_on) != bool(turn_spec["expected_web_search"]):
             errors.append(f"web_search esperado={turn_spec['expected_web_search']}, obtenido={ws_on}")
 
@@ -306,7 +306,8 @@ def run_regression(
     kb_path = str(ROOT_DIR / "knowledge_base")
     local_resources = load_multimedia_resources(kb_path)
     system_prompt = _build_base_system_prompt(local_resources)
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
+    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-pro")
+    judge_model_name = CLIENT_CONFIG.get("ai_model_fast", "gemini-2.5-flash")
 
     run_stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     all_passed = True
@@ -407,7 +408,7 @@ def run_regression(
                     prompt_user=user_prompt,
                     response_text=response_text,
                     criteria=turn["judge_criteria"],
-                    model_name=model_name,
+                    model_name=judge_model_name,
                 )
                 if not j_ok:
                     errors.extend([f"[Juez LLM] {r}" for r in judge_reasons])

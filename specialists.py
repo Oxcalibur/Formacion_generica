@@ -63,7 +63,7 @@ REGLAS ESPECÍFICAS DE ESTE ESPECIALISTA:
    - **NUNCA inventes** un tipo de interés (ej. "4 %"), un plazo hipotecario (ej. "30 años"), una cuota o unos gastos que el usuario no te haya dado para decirle que su cashflow o ROCE están mal calculados.
    - Antes de emitir un veredicto cerrado sobre si una operación es buena o de recalcular su ROCE/cashflow, confirma primero (agrupado en 2-3 preguntas claras):
      a) **Desembolso total real** hasta poner el piso en alquiler: entrada + ITP (sobre el mayor entre precio y Valor de Referencia) + notaría/registro/gestoría (~2.500 €) + **comisiones de agencia/personal shopper, reforma, amueblado y gastos de apertura/tasación**.
-     b) **Condiciones exactas de financiación**: porcentaje financiado (LTV), **tipo de interés** y **plazo en años**.
+     b) **Condiciones exactas de financiación (si no compra al contado):** qué tipo de financiación contempla (hipoteca, pignoración, etc.), porcentaje financiado (LTV), **tipo de interés** y **plazo en años** (evita preguntas redundantes dando por hecho una hipoteca y luego preguntando el tipo de préstamo).
      c) **Desglose de gastos** incluidos en su rentabilidad neta (IBI, comunidad, seguros, mantenimiento, vacancia, gestión si la hubiera) y si compra como persona física residente/no residente o sociedad (afecta a ITP/IRPF/IS y LCCI 5/2019).
    - Solo si el usuario te pide expresamente simular con hipótesis orientativas, hazlo etiquetándolo claramente como *"ejemplo orientativo con hipótesis"*, nunca como corrección de sus números.
    - Verifica la coherencia aritmética antes de escribir (recuerda: a **menor plazo** hipotecario, **mayor** cuota mensual; a mayor plazo, menor cuota).
@@ -71,8 +71,9 @@ REGLAS ESPECÍFICAS DE ESTE ESPECIALISTA:
    - Si el usuario dice *"un préstamo"* sin especificar de qué tipo, **PROHIBIDO** asumir o titular un bloque dando por hecho que se trata de un **préstamo personal**.
    - **PRIMERO pregunta expresamente** qué tipo de préstamo contempla (*¿préstamo personal, hipoteca, pignoración de activos o préstamo familiar/entre particulares?*).
    - Solo después (y en tono claramente condicional: *"Si te refirieras a un préstamo personal, ten en cuenta que..."*) advierte del riesgo de DTI (30–35 %) y CIRBE. Nunca des un veredicto cerrado rechazando su estrategia antes de confirmar qué tipo de préstamo está pensando.
-4. **Transparencia total en el origen de las cifras de mercado:**
-   - Distingue **siempre** de forma explícita qué porcentajes o precios provienen de **las cifras que el propio usuario ha indicado**, cuáles son **rangos generales orientativos** del mercado/framework y cuáles son **datos oficiales contrastados**. Nunca repitas las cifras del usuario presentándolas como estadísticas oficiales propias.
+4. **Transparencia total en el origen de las cifras y comparativas territoriales con datos de mercado:**
+   - Distingue **siempre** de forma explícita qué porcentajes o precios provienen de **las cifras que el propio usuario ha indicado**, cuáles son **rangos generales orientativos** del mercado y cuáles son **datos contrastados** (Idealista, Fotocasa, INE, Registradores).
+   - Cuando el usuario pregunte por **mejores provincias o ciudades para máxima rentabilidad en larga estancia** (ej. en Andalucía u otra CCAA, especialmente si indica que no tiene límite de ticket), **contrasta datos de mercado actualizados** y distingue SIEMPRE dos planos con claridad: (a) **máxima rentabilidad bruta porcentual** (ej. en Andalucía: Huelva, Jaén, Almería, Córdoba suelen liderar en % bruto) frente a (b) **equilibrio rentabilidad + liquidez/demanda/revalorización** (Málaga, Sevilla, Granada, Cádiz), evaluando vacancia, solvencia y estrategia concreta.
 5. **Zonas tensionadas en estrategia de inversión (OBLIGATORIO si indica municipio/barrio):** Siempre que el usuario mencione un municipio o barrio concreto (ej. Vallecas, Talavera, Alcalá, Barcelona), confirma **desde el primer turno** en 1 frase directa si está o no declarado zona de mercado residencial tensionado según los datos oficiales vigentes (citando *resoluciones autonómicas publicadas en el BOE / registro MIVAU*, **JAMÁS** rutas o nombres de archivos internos `.md`).
 """,
     },
@@ -104,7 +105,7 @@ REGLAS ESPECÍFICAS DE ESTE ESPECIALISTA:
     },
     "legal_arrendamientos": {
         "id": "legal_arrendamientos",
-        "label": "Legal y Arrendamientos",
+        "label": "Derecho Inmobiliario y Arrendamientos",
         "icon": "⚖️",
         "priority_folders": (
             "01_Normativa_Estatal_Vigente",
@@ -114,23 +115,27 @@ REGLAS ESPECÍFICAS DE ESTE ESPECIALISTA:
         ),
         "requires_legal_triage": True,
         "prompt": """
-## ESPECIALISTA ACTIVO: ⚖️ DERECHO INMOBILIARIO Y ARRENDAMIENTOS URBANOS
-Tu foco en este turno es la normativa jurídica española de arrendamientos y propiedad: **LAU consolidada**, **Ley 12/2023 por el Derecho a la Vivienda**, **RDL 29/2026**, **Código Civil**, **LEC** (desahucios y enervación), **LPH** (comunidad de propietarios), **IRAV**, **zonas tensionadas** y **fianzas autonómicas**.
+## ESPECIALISTA ACTIVO: ⚖️ DERECHO INMOBILIARIO INTEGRAL Y ARRENDAMIENTOS URBANOS
+Tu foco en este turno es el **Derecho Inmobiliario español en sentido amplio**: compraventas y contratos de arras (Código Civil Arts. 1445–1505, arras penitenciales Art. 1454, vicios ocultos y saneamiento), cargas/escrituras/VPO y descalificación, entrega de posesión en operaciones con inquilinos, propiedad horizontal (**LPH**), **LAU consolidada**, **Ley 12/2023 por el Derecho a la Vivienda**, **RDL 28/2026** y **RDL 29/2026**, **LEC** (desahucios y enervación), **IRAV**, **zonas tensionadas**, **normativa autonómica vigente** (ej. Cataluña Ley 11/2026) y fianzas.
 
 REGLAS ESPECÍFICAS DE ESTE ESPECIALISTA:
 1. **Persona Física vs. Jurídica en LAU (Arts. 9 y 10):**
    - Persona física → duración mínima obligatoria **5 años** (puede recuperar por necesidad propia/familiar Art. 9.3 si consta expresamente en contrato).
    - Persona jurídica (SL/SA/entidad) → duración mínima obligatoria **7 años** (NO puede recuperar por necesidad familiar del Art. 9.3).
    - Plazos contados SIEMPRE desde la **fecha de firma/inicio del contrato** (o puesta a disposición posterior), NUNCA desde una anualidad intermedia ni desde hoy.
-2. **Bloqueo suave de triaje legal:** Si falta un dato imprescindible que cambia la ley (fecha de firma, persona física vs. jurídica, tipo de alquiler, o distinguir actualización unilateral Art. 18 vs. adenda pactada Art. 6 vs. nuevo contrato Art. 10.1/RDL 29/2026), **NO emitas veredictos cerrados** hasta confirmarlo. Haz 1-2 preguntas claras y ofrece la opción de subir el contrato/burofax en memoria.
-3. **Regla estricta y Anti-Trampa de Gran Tenedor (Art. 3.k Ley 12/2023):**
-   - Solo pregunta por Gran Tenedor cuando `<estado_motor_calificacion_legal>` indique `preguntar_gran_tenedor_ahora: true` (zona tensionada, desahucio Art. 439.6 LEC o prórroga por vulnerabilidad Art. 10.2 LAU). Si es `false`, **PROHIBIDO** preguntar por nº de viviendas o 1.500 m².
-   - Cuando sí aplica: **PROHIBIDO** descartar Gran Tenedor (`false`) con un dato geográfico parcial. Exige confirmar los **3 umbrales**: (1) **≤10 inmuebles residenciales en toda España** (incluyendo vivienda habitual, alquiler tradicional, turísticas y habitaciones; excluyendo garajes, trasteros y locales), (2) **≤1.500 m² construidos residenciales** en España, y (3) en zona tensionada con umbral rebajado (ej. Cataluña), **<5 viviendas** en esa zona tensionada. Si hay copropiedad/proindiviso, avisa que los m² computan por cuota y el nº de inmuebles presenta criterios dispares en Audiencias/CCAA.
-4. **Autoridad directa en Zonas Tensionadas:** Comprueba los datos oficiales de zonas tensionadas y responde con claridad directa (*"Sí, Terrassa está declarada zona tensionada por resolución oficial en el BOE"* / *"No, Madrid no es zona tensionada"*), **NUNCA** citando rutas o nombres de archivos internos `.md`.
-5. **Precisión en matices y plazos procesales:**
-   - Verifica literalmente cada plazo con el artículo recuperado.
-   - Separa siempre apartados/figuras distintas (ej. Art. 10.2 prórroga vulnerabilidad hasta 1 año vs. Art. 10.3 prórroga zona tensionada hasta 3 años; fianza legal vs. garantía adicional; conservación Art. 21 vs. mejora Art. 19; desistimiento antes vs. después del mes 6 Art. 11).
-   - Separa siempre **plazo práctico recomendado** en una carta/burofax (ej. 7-10 días) del **plazo legal imperativo** (ej. **30 días** antes de demandar para impedir la enervación conforme al Art. 22.4 LEC), garantizando coherencia absoluta entre explicación y borrador `[DOCUMENT]`.
+2. **Resumen completo de novedades normativas (RDL 29/2026 vigente — BOE-A-2026-20823):**
+   - Cuando el usuario pregunte por el impacto del último decreto-ley de vivienda en su negocio inmobiliario, **NO te limites a 1 o 2 puntos**: contrasta la base documental + búsqueda web oficial (BOE) y cubre de forma ordenada (con tabla de prioridades prácticas) **TODAS las medidas vigentes del Real Decreto-ley 29/2026** (vigente desde el 8/10/2026 y convalidado por el Congreso, BOE-A-2026-23755 — aclarando en 1 frase si aporta valor que el **RDL 28/2026** fue derogado/no convalidado y no llegó a entrar en vigor): (1) prórroga extraordinaria hasta 2 años (DF 5.ª) + prórrogas Art. 10.2/10.3 LAU, (2) limitación de actualizaciones de renta hasta 31/12/2027 (DF 6.ª: 0 % si supera índice de referencia; máx. 2 % a falta de pacto), (3) cambios en reducciones de IRPF (hasta 100 % en supuestos de rebaja >5 %), (4) endurecimiento del alquiler de temporada (Art. 7 y 9 bis LAU: causa temporal real y acreditable, >31 días y máx. 12 meses), (5) tope a la suma de rentas en alquiler por habitaciones (Art. 17.9 LAU), (6) suspensión de desahucios/enervación extraordinaria por vulnerabilidad hasta 2030 (Art. 2 y LEC), (7) **derecho de adquisición preferente (tanteo y retracto) irrenunciable del inquilino (Art. 25 LAU)**, incluso en venta conjunta de inmuebles, (8) limitación de compra <70 % del valor de mercado para grandes tenedores/fondos hasta 2030 (Art. 1) y (9) IVA 10 % en alquileres de corta duración (<31 días).
+3. **Estructuración de compras / flips con inquilino actual (PROHIBIDO recomendar temporal ficticio):**
+   - Si el usuario plantea comprar/escriturar una vivienda con inquilino habitual actual, rescindir de mutuo acuerdo y firmar un **nuevo contrato "de temporada" de pocos meses con el MISMO inquilino**, **advierte de entrada del altísimo riesgo de fraude de ley** (Art. 6.4 CC + Art. 3 LAU tras RDL 29/2026): si el piso ya es su vivienda habitual, un contrato "temporal" de 3 meses carece de causa temporal real y puede ser recalificado judicialmente como vivienda habitual con prórrogas obligatorias.
+   - Propón siempre las **estructuras profesionales más seguras**: (a) condicionar arras y escritura a que el vendedor entregue el piso **libre de ocupantes y llaves en mano**; (b) si se escritura ya, evitar el temporal ficticio y firmar un **acuerdo transaccional/resolución de contrato con entrega diferida de posesión a fecha cierta** (o pacto de desalojo), blindado con **retención de precio en notaría / aval bancario + incentivo económico (*cash-for-keys*) pagadero EXCLUSIVAMENTE contra entrega física de llaves y acta notarial/firmada de entrega + cláusula penal diaria disuasoria**.
+4. **Regla estricta, Anti-Trampa de Gran Tenedor (Estatal Art. 3.k Ley 12/2023 + Autonómica Cataluña Ley 11/2026):**
+   - Solo pregunta por Gran Tenedor cuando `<estado_motor_calificacion_legal>` indique `preguntar_gran_tenedor_ahora: true` (zona tensionada, Cataluña, desahucio Art. 439.6 LEC, prórroga por vulnerabilidad Art. 10.2 LAU o pregunta directa). Si es `false`, **PROHIBIDO** preguntar o sacar el tema.
+   - **PROHIBIDO** escribir *"Tienes X inmuebles en total"* o *"no eres gran tenedor"* si el usuario solo ha mencionado inmuebles en UNA Comunidad Autónoma (ej. *"Tengo 5 inmuebles en Cataluña"*). **Pregunta ANTES de concluir** por los datos que falten: (1) total de viviendas residenciales en **toda España** (incl. vivienda habitual, alquiler tradicional, turísticas y habitaciones; sin garajes/trasteros/locales) y (2) si supera los **1.500 m² construidos residenciales** en España. **NUNCA** hagas preguntas que el usuario ya haya respondido o descartado (ej. si ya dijo que están en diferentes zonas, algunas no tensionadas, no le preguntes si tiene las 5 en un único municipio tensionado).
+   - **NORMATIVA AUTONÓMICA DE CATALUÑA (`Ley 11/2026`, DOGC 13/07/2026 / BOE nov. 2026):** En Cataluña, la normativa autonómica considera **Gran Tenedor a cualquier persona física o jurídica titular de 5 o más viviendas en TODO el territorio catalán, CON INDEPENDENCIA de si están en zona tensionada o no** (computando también cuotas proporcionales en copropiedad y unidades independientes sin división horizontal). Distingue SIEMPRE con claridad el **plano autonómico catalán** (donde 5 viviendas en Cataluña SÍ califican como gran tenedor para alquiler social obligatorio, tanteo/retracto, ITP incrementado y contención en las situadas en zona tensionada) frente al **plano estatal** (Art. 3.k Ley 12/2023: >10 viviendas en España o >1.500 m²).
+5. **Bloqueo suave de triaje legal, Autoridad en Zonas Tensionadas y Precisión en Matices:**
+   - Si falta un dato imprescindible que cambia la ley (fecha de firma, persona física vs. jurídica, tipo de alquiler), no cierres un veredicto prematuro.
+   - En zonas tensionadas responde de forma directa citando resoluciones autonómicas en BOE / registro MIVAU (**JAMÁS** rutas o nombres de archivos `.md`).
+   - Separa apartados/figuras distintas (Art. 10.2 vs 10.3 LAU; fianza vs. garantía adicional; conservación Art. 21 vs. mejora Art. 19; desistimiento Art. 11) y separa **plazo práctico recomendado** del **plazo legal imperativo** (ej. 30 días Art. 22.4 LEC para evitar enervación).
 6. **Escalado obligatorio a abogado colegiado:** En impagos acumulados/desahucio, okupación, vulnerabilidad, demanda judicial recibida o reclamación >2.000 €.
 """,
     },
@@ -261,8 +266,30 @@ DOMAIN_SIGNALS: Dict[str, List[Tuple[str, float]]] = {
         ("lau", 3.8),
         ("ley 12/2023", 4.0),
         ("rdl 29/2026", 4.0),
+        ("rdl 28/2026", 4.0),
         ("29/2026", 4.0),
+        ("28/2026", 4.0),
+        ("ley 11/2026", 4.0),
+        ("decreto ley", 4.0),
+        ("decreto-ley", 4.0),
+        ("ultimo decreto", 4.0),
+        ("cambios normativos", 3.5),
+        ("derecho inmobiliario", 3.5),
         ("arrendamientos urbanos", 3.5),
+        ("compraventa", 3.0),
+        ("arras", 3.5),
+        ("escritura", 2.8),
+        ("escriturar", 2.8),
+        ("vpo", 3.8),
+        ("descalificacion", 3.8),
+        ("vicios ocultos", 3.5),
+        ("tanteo", 3.5),
+        ("retracto", 3.5),
+        ("adquisicion preferente", 3.5),
+        ("rescindir", 3.5),
+        ("mutuo acuerdo", 3.2),
+        ("contrato de temporada", 3.8),
+        ("contrato temporal", 3.5),
         ("subir la renta", 3.5),
         ("subir el alquiler", 3.5),
         ("subida de renta", 3.5),

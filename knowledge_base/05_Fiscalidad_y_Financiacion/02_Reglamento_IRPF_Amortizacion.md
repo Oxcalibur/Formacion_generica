@@ -3,8 +3,11 @@ boe_id: BOE-A-2007-6820
 norma: "Reglamento del IRPF - RD 439/2007 (Amortización y gastos)"
 ambito: ES_NACIONAL
 temas: [amortizacion_3_por_ciento, muebles, saldos_dudoso_cobro, gastos_deducibles]
-fecha_actualizacion_boe: 20261118T111337Z
-fecha_descarga: 2026-11-23
+fecha_publicacion_boe: 20070331
+fecha_vigencia_boe: 20070401
+estatus_derogacion: N
+fecha_actualizacion_boe: 20261125T122145Z
+fecha_descarga: 2026-11-26
 bloques_vigentes: 4
 ---
 
@@ -32,6 +35,7 @@ Cuando un saldo dudoso fuese cobrado posteriormente a su deducción, se computar
 f) El importe de las primas de contratos de seguro, bien sean de responsabilidad civil, incendio, robo, rotura de cristales u otros de naturaleza análoga, sobre los bienes o derechos productores de los rendimientos.
 g) Las cantidades destinadas a servicios o suministros.
 h) Las cantidades destinadas a la amortización en las condiciones establecidas en el artículo siguiente de este Reglamento.
+Se reduce a tres meses, en los ejercicios de 2020 y 2021, el plazo de seis meses a que se refiere el número 2º de la letra e), por el art. 15 del Real Decreto-ley 35/2020, de 22 de diciembre. Ref. BOE-A-2020-16823#a1-7
 
 ### Artículo 14
 
@@ -53,8 +57,10 @@ A efectos de la aplicación de la reducción prevista en el artículo 23.3 de la
 a) Importes obtenidos por el traspaso o la cesión del contrato de arrendamiento de locales de negocio.
 b) Indemnizaciones percibidas del arrendatario, subarrendatario o cesionario por daños o desperfectos en el inmueble.
 c) Importes obtenidos por la constitución o cesión de derechos de uso o disfrute de carácter vitalicio.
+Esta modificación resulta aplicable a los periodos impositivos que se inicien a partir del 1 de enero de 2015, según establece la disposición final 2.2 del citado Real Decreto.
 
 ### Artículo 16
 
 Artículo 16. Reducción por arrendamiento de vivienda.
 (Suprimido)
+Esta supresión resulta aplicable a los periodos impositivos que se inicien a partir del 1 de enero de 2015, según establece la disposición final 2.2 del citado Real Decreto.

@@ -3,8 +3,11 @@ boe_id: BOE-A-2006-20764
 norma: "Ley 35/2006 del IRPF (Rendimientos capital inmobiliario)"
 ambito: ES_NACIONAL
 temas: [irpf, base_imponible, gastos_deducibles, reducciones, imputacion_rentas]
-fecha_actualizacion_boe: 20261118T123311Z
-fecha_descarga: 2026-11-23
+fecha_publicacion_boe: 20061129
+fecha_vigencia_boe: 20070101
+estatus_derogacion: N
+fecha_actualizacion_boe: 20261125T115541Z
+fecha_descarga: 2026-11-26
 bloques_vigentes: 6
 ---
 
@@ -69,6 +72,7 @@ En ningún caso resultarán de aplicación las reducciones respecto de la parte 
 Las zonas de mercado residencial tensionado a las que podrá resultar de aplicación lo previsto en este apartado serán las recogidas en la resolución que, de acuerdo con lo dispuesto en la legislación estatal en materia de vivienda, apruebe el Ministerio de Vivienda y Agenda Urbana.
 3. Los rendimientos netos con un período de generación superior a dos años, así como los que se califiquen reglamentariamente como obtenidos de forma notoriamente irregular en el tiempo, se reducirán en un 30 por ciento, cuando, en ambos casos, se imputen en un único período impositivo.
 La cuantía del rendimiento neto a que se refiere este apartado sobre la que se aplicará la citada reducción no podrá superar el importe de 300.000 euros anuales.
+Esta modificación entra en vigor el 1 de enero de 2024, según establece la disposición final 9 de la citada Ley.
 
 ### Artículo 24
 
@@ -100,8 +104,3 @@ Hasta euros
 El valor catastral correspondiente a cada inmueble se determinará de forma proporcional al número de días que corresponda en cada período impositivo.
 Si a la fecha de devengo del impuesto el inmueble careciera de valor catastral o éste no hubiera sido notificado al titular, el valor del inmueble a computar para la aplicación de la escala anterior será el 50 por ciento del mayor de los siguientes valores: el comprobado por la Administración a efectos de otros tributos o el precio, contraprestación o valor de la adquisición.
 Cuando se trate de inmuebles en construcción y en los supuestos en que, por razones urbanísticas, el inmueble no sea susceptible de uso, no se estimará renta alguna.
-2. Estas rentas se imputarán a los titulares de los bienes inmuebles de acuerdo con el apartado 3 del artículo 11 de esta Ley.
-Cuando existan derechos reales de disfrute, la renta computable a estos efectos en el titular del derecho será la que correspondería al propietario.
-3. En los supuestos de derechos de aprovechamiento por turno de bienes inmuebles la imputación se efectuará al titular del derecho real, prorrateando el valor catastral en función de la duración anual del periodo de aprovechamiento.
-Si a la fecha de devengo del impuesto los inmuebles a que se refiere este apartado carecieran de valor catastral, o éste no hubiera sido notificado al titular, se tomará como base de imputación el precio de adquisición del derecho de aprovechamiento.
-No procederá la imputación de renta inmobiliaria a los titulares de derechos de aprovechamiento por turno de bienes inmuebles cuando su duración no exceda de dos semanas por año.

@@ -3,8 +3,11 @@ boe_id: BOE-A-2019-3814
 norma: "Ley 5/2019 de Crédito Inmobiliario (Gastos hipoteca y amortización)"
 ambito: ES_NACIONAL
 temas: [hipoteca, gastos_hipoteca, amortizacion_anticipada, fein]
-fecha_actualizacion_boe: 20261007T081207Z
-fecha_descarga: 2026-11-23
+fecha_publicacion_boe: 20190316
+fecha_vigencia_boe: 20190616
+estatus_derogacion: N
+fecha_actualizacion_boe: 20261126T101622Z
+fecha_descarga: 2026-11-26
 bloques_vigentes: 6
 ---
 

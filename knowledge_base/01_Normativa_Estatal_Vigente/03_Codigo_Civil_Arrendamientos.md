@@ -3,8 +3,11 @@ boe_id: BOE-A-1889-4763
 norma: "Código Civil Español (Arts. 1542-1582 Arrendamientos)"
 ambito: ES_NACIONAL
 temas: [arrendamiento_supletorio, obligaciones, daños]
+fecha_publicacion_boe: 18890725
+fecha_vigencia_boe: 18890816
+estatus_derogacion: N
 fecha_actualizacion_boe: 20260907T125934Z
-fecha_descarga: 2026-11-22
+fecha_descarga: 2026-11-26
 bloques_vigentes: 41
 ---
 

@@ -3,8 +3,11 @@ boe_id: BOE-A-1993-25359
 norma: "Ley del ITP y AJD - RDL 1/1993 (Base imponible y valor de referencia)"
 ambito: ES_NACIONAL
 temas: [itp, valor_referencia, impuestos_compra]
-fecha_actualizacion_boe: 20260323T123132Z
-fecha_descarga: 2026-11-23
+fecha_publicacion_boe: 19931020
+fecha_vigencia_boe: 19931021
+estatus_derogacion: N
+fecha_actualizacion_boe: 20261126T065532Z
+fecha_descarga: 2026-11-26
 bloques_vigentes: 6
 ---
 
@@ -133,3 +136,4 @@ De 1.803,05 a 6.010,12
 De 6.010,13 a 12.020,24
 14,42
 Exceso: 0,066111 euros por cada 60,10 o fracción.
+Se convierten a euros las cuantías contempladas en los apartados 1 y 3 por el apartado 5 de la Resolución de 27 de abril de 2001. Ref. BOE-A-2001-8543

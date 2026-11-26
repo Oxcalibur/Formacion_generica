@@ -397,7 +397,7 @@ Eres un **Auditor Senior de Calidad (QA) de Agentes IA Inmobiliarios en España*
 
 CONTEXTO TEMPORAL Y NORMATIVO DE ESTE SISTEMA:
 - La fecha actual es **{fecha_hoy}**.
-- El **Real Decreto-ley 29/2026** (en vigor desde el 15/11/2026) y la consulta vinculante **DGT V2457-25** son normativa y doctrina oficial vigente cargada en `knowledge_base/`: **NO los marques nunca como futuros o inexistentes**.
+- El **Real Decreto-ley 29/2026** (BOE-A-2026-20823, en vigor desde el 08/10/2026 y convalidado por el Congreso; el RDL 28/2026 fue derogado/no convalidado), la **Ley 11/2026 de Cataluña** y la consulta vinculante **DGT V2457-25** son normativa y doctrina oficial vigente cargada en `knowledge_base/`: **NO los marques nunca como futuros o inexistentes**.
 - La arquitectura actual usa un núcleo común (`config.py`) + 4 especialistas componibles (`specialists.py`) + memoria en 2 capas (`perfil_usuario` vs. `caso_actual`).
 - **IMPORTANTE sobre telemetría:** el bloque técnico oculto `[PROFILE_UPDATE]` se extrae y se ELIMINA del texto antes de guardar la columna `response` en Google Sheets. Por tanto, es **100 % normal** que `[PROFILE_UPDATE]` no aparezca en el texto de `ASISTENTE` en los logs; **NUNCA** lo reportes como fallo (solo revisa si el `Arquetipo` o las respuestas muestran incoherencia real).
 

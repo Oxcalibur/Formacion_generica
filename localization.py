@@ -42,10 +42,10 @@ TRANSLATIONS = {
 
         # Asistente
         "assistant_welcome": "⚖️ Asesor Inmobiliario Integral — {user_role}",
-        "assistant_caption": "Asesoramiento legal (LAU, Ley 12/2023, RDL 29/2026), fiscal (IRPF, ITP), financiación (LCCI, CIRBE) y estrategia de inversión en España.",
-        "assistant_input_placeholder": "Pregunta sobre alquileres, contratos, impuestos (IRPF/ITP), hipotecas o estrategia de inversión...",
-        "assistant_thinking": "Consultando normativa legal, fiscal, financiación y estrategia...",
-        "assistant_welcome_msg": "Hola, soy tu **{client_name}**. Puedo ayudarte —tanto si actúas como persona física como si eres una empresa o entidad— con derecho de alquileres, fiscalidad (IRPF/ITP), hipotecas y financiación, o estrategia de inversión inmobiliaria en España. ¿En qué situación o decisión te ayudo hoy?",
+        "assistant_caption": "Asesoramiento en derecho inmobiliario integral (compraventas, arras, VPO, propiedad horizontal y alquileres), fiscalidad (IRPF, ITP), financiación (LCCI, CIRBE) y estrategia de inversión en España.",
+        "assistant_input_placeholder": "Pregunta sobre derecho inmobiliario, compraventas, alquileres, impuestos (IRPF/ITP), hipotecas o estrategia de inversión...",
+        "assistant_thinking": "Consultando normativa inmobiliaria, fiscal, financiación y fuentes oficiales...",
+        "assistant_welcome_msg": "Hola, soy tu **{client_name}**. Puedo ayudarte —tanto si actúas como persona física como si eres una empresa o entidad— con **derecho inmobiliario integral** (compraventas, arras, cargas/VPO, propiedad horizontal y alquileres), fiscalidad (IRPF/ITP), hipotecas y financiación, o estrategia de inversión inmobiliaria en España. ¿En qué situación o decisión te ayudo hoy?",
         "doc_uploader_title": "📎 Adjuntar contrato o documento (solo para esta conversación)",
         "doc_privacy_note": "🔒 Privacidad: el documento se lee únicamente en memoria para esta consulta y NO se guarda ni se conserva para futuras conversaciones.",
         "doc_uploader_label": "Sube tu contrato, anexo, burofax o foto (PDF, Word, TXT o imagen)",
@@ -118,10 +118,10 @@ TRANSLATIONS = {
 
         # Assistant, Dojo, etc.
         "assistant_welcome": "⚖️ Comprehensive Real Estate Advisor — {user_role}",
-        "assistant_caption": "Spanish real estate guidance: tenancy law (LAU, RDL 29/2026), taxation (IRPF, ITP), mortgages (LCCI, CIRBE) & investment strategy.",
-        "assistant_input_placeholder": "Ask about leases, taxes (IRPF/ITP), mortgages, financing or real estate investment strategy...",
-        "assistant_thinking": "Consulting legal, tax, financing and investment knowledge base...",
-        "assistant_welcome_msg": "Hello, I'm your **{client_name}**. Whether you act as an individual or a company/entity, I can help you with Spanish tenancy law, real estate taxation (IRPF/ITP), mortgages & financing, and investment strategy. How can I help you today?",
+        "assistant_caption": "Comprehensive Spanish real estate advisory: real estate law (purchases, earnest money, VPO, HOA & leases), taxation (IRPF, ITP), mortgages (LCCI, CIRBE) & investment strategy.",
+        "assistant_input_placeholder": "Ask about real estate law, purchases, leases, taxes (IRPF/ITP), mortgages or investment strategy...",
+        "assistant_thinking": "Consulting real estate law, taxation, financing and official sources...",
+        "assistant_welcome_msg": "Hello, I'm your **{client_name}**. Whether you act as an individual or a company/entity, I can help you with **Spanish real estate law** (purchases, earnest money, VPO/liens, HOA & leases), real estate taxation (IRPF/ITP), mortgages & financing, and investment strategy. How can I help you today?",
         "doc_uploader_title": "📎 Attach contract or document (this conversation only)",
         "doc_privacy_note": "🔒 Privacy: your document is read strictly in memory for this chat and is NOT saved or kept for future conversations.",
         "doc_uploader_label": "Upload your lease, addendum, notice or photo (PDF, Word, TXT or image)",

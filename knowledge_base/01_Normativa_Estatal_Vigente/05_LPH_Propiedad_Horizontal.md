@@ -3,8 +3,11 @@ boe_id: BOE-A-1960-10906
 norma: "Ley 49/1960, sobre Propiedad Horizontal"
 ambito: ES_NACIONAL
 temas: [comunidad_propietarios, vivienda_turistica, obras]
+fecha_publicacion_boe: 19600723
+fecha_vigencia_boe: 19600812
+estatus_derogacion: N
 fecha_actualizacion_boe: 20261005T085250Z
-fecha_descarga: 2026-11-22
+fecha_descarga: 2026-11-26
 bloques_vigentes: 34
 ---
 
@@ -274,6 +277,7 @@ Artículo veintitrés.
 El régimen de propiedad horizontal se extingue:
 Primero. Por la destrucción del edificio, salvo pacto en contrario. Se estimará producida aquélla cuando el coste de la reconstrucción exceda del cincuenta por ciento del valor de la finca al tiempo de ocurrir el siniestro, a menos que el exceso de dicho coste esté cubierto por un seguro.
 Segundo. Por conversión en propiedad o copropiedad ordinarias.
+Su anterior numeración era art. 21.
 
 ### CAPITULO III
 
@@ -319,6 +323,8 @@ c) Al aprobarse el presupuesto ordinario correspondiente al ejercicio anual inme
 2. La dotación del fondo de reserva no podrá ser inferior, en ningún momento del ejercicio presupuestario, al mínimo legal establecido.
 Las cantidades detraídas del fondo durante el ejercicio presupuestario para atender los gastos de las obras o actuaciones incluidas en el artículo 10 se computarán como parte integrante del mismo a efectos del cálculo de su cuantía mínima.
 Al inicio del siguiente ejercicio presupuestario se efectuarán las aportaciones necesarias para cubrir las cantidades detraídas del fondo de reserva conforme a lo señalado en el párrafo anterior.
+Se numera como primera al añadirse una segunda por la disposición final 4.3 de la Ley Orgánica 1/2025, de 2 de enero. Ref. BOE-A-2025-76#df-4
+Anteriormente era la disposición adicional.
 
 ### Disposición adicional segunda
 

@@ -186,6 +186,14 @@ LEGAL_QUERY_EXPANSIONS = [
         ("hipoteca", "prestamo", "fein", "cirbe", "dti", "ltv", "apalancamiento", "banco", "financiacion", "inversion", "rentabilidad", "roce"),
         "articulo 14 articulo 23 lcci fein gastos hipoteca cirbe dti ltv apalancamiento rentabilidad roce framework",
     ),
+    (
+        ("decreto", "decreto ley", "rdl", "29/2026", "28/2026", "ultimo decreto", "cambios normativos"),
+        "real decreto-ley 29/2026 real decreto-ley 28/2026 prorroga extraordinaria indemnizacion actualizacion 2 por ciento irpf 100 temporal habitaciones desahucios vulnerabilidad tanteo retracto",
+    ),
+    (
+        ("compraventa", "arras", "flip", "flipping", "escriturar", "vicios ocultos", "entrega de posesion", "saneamiento"),
+        "articulo 1445 articulo 1454 arras compraventa saneamiento vicios ocultos entrega posesion fraude de ley resolucion mutuo acuerdo",
+    ),
 ]
 
 
@@ -592,7 +600,7 @@ def generate_quiz_questions(topic, difficulty, role, knowledge_context=""):
             {"question": "Pregunta de prueba 5", "options": ["A", "B", "C"], "answer": "B"},
         ]
 
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
+    model_name = CLIENT_CONFIG.get("ai_model_fast", "gemini-2.5-flash")
 
     kb_folder = CLIENT_CONFIG.get("knowledge_base_folder")
     if topic and kb_folder and os.path.exists(kb_folder):
@@ -1900,15 +1908,84 @@ WEB_SEARCH_TRIGGERS = (
 )
 
 
-def _debe_activar_busqueda_web(user_input: str, history: Optional[list] = None) -> Tuple[bool, str]:
+REAL_ESTATE_PORTAL_DOMAINS = (
+    "idealista.com",
+    "fotocasa.es",
+    "habitaclia.com",
+    "pisos.com",
+    "yaencontre.com",
+    "milanuncios.com",
+    "wallapop.com",
+    "indomio.es",
+    "kyero.com",
+    "servihabitat.com",
+    "solvia.es",
+    "haya.es",
+    "alisedainmobiliaria.com",
+    "badi.com",
+    "spotahome.com",
+    "tucasa.com",
+    "enalquiler.com",
+)
+
+
+def _detectar_enlaces_externos(user_input: str) -> Dict[str, Any]:
     """
-    Decide de forma determinista cuándo activar Google Search Grounding en Gemini
-    para verificar retos/discrepancias del usuario, doctrina (DGT/TEAC/TS),
-    ordenanzas municipales, jerga inversora o datos vivos antes de responder de memoria.
+    Detecta URLs en el mensaje del usuario y determina si corresponden a portales inmobiliarios
+    (Idealista, Fotocasa, Habitaclia, etc.) que bloquean el acceso automatizado y NO deben
+    reconstruirse ni buscarse por riesgo grave de alucinación o mezcla con otro anuncio.
+    """
+    text = user_input or ""
+    urls = re.findall(r"(?:https?://|www\.)[^\s<>\"'\)\]]+", text, flags=re.IGNORECASE)
+    portal_urls: List[str] = []
+    other_urls: List[str] = []
+    for u in urls:
+        u_low = u.lower()
+        if any(dom in u_low for dom in REAL_ESTATE_PORTAL_DOMAINS):
+            portal_urls.append(u)
+        else:
+            other_urls.append(u)
+
+    # Comprobar si además del enlace el usuario copió datos concretos del inmueble (precio + superficie o varios datos)
+    text_sin_urls = re.sub(r"(?:https?://|www\.)[^\s<>\"'\)\]]+", " ", text, flags=re.IGNORECASE)
+    tiene_precio = bool(re.search(r"\b\d{2,3}(?:[\.,]\d{3})+\s*(?:€|eur|euros?)|\b\d{5,7}\s*(?:€|eur|euros?)", text_sin_urls, flags=re.IGNORECASE))
+    tiene_superficie = bool(re.search(r"\b\d{2,4}\s*(?:m2|m²|metros)\b", text_sin_urls, flags=re.IGNORECASE))
+    tiene_datos_copiados = bool(tiene_precio and tiene_superficie) or len(text_sin_urls.strip()) >= 220
+
+    return {
+        "urls": urls,
+        "portal_urls": portal_urls,
+        "other_urls": other_urls,
+        "has_portal_url": bool(portal_urls),
+        "has_other_url": bool(other_urls),
+        "tiene_datos_copiados": tiene_datos_copiados,
+    }
+
+
+def _debe_activar_busqueda_web(
+    user_input: str,
+    history: Optional[list] = None,
+    active_specialists: Optional[List[str]] = None,
+) -> Tuple[bool, str]:
+    """
+    Estrategia Web-First inteligente:
+    0. Salvaguarda anti-alucinación para enlaces de portales inmobiliarios (Idealista, Fotocasa, etc.)
+       sin datos copiados: DESACTIVA búsqueda web para impedir mezclar datos de otro anuncio.
+    1. Prioridad máxima ante retos/discrepancias del usuario (`reto_o_discrepancia_usuario`).
+    2. Referencias doctrinales/legales explícitas (DGT, STS, SAP, TEAC), disparadores y preguntas conceptuales.
+    3. Por defecto ACTIVA en cualquier consulta sustantiva (>=20 caracteres) de Derecho Inmobiliario,
+       Fiscalidad o Inversión/Mercado (decretos recientes, leyes autonómicas como Cataluña Ley 11/2026,
+       rentabilidades por provincia, jurisprudencia), desactivándola solo en saludos, respuestas cortas
+       de triaje o consultas puramente operativas internas (Zazume/averías sin consulta normativa).
     """
     text = (user_input or "").strip()
     if len(text) < 6:
         return False, ""
+
+    # 0. Si el usuario incluye cualquier URL (Idealista, Fotocasa, BOE, etc.), activar lectura web + UrlContext
+    url_info = _detectar_enlaces_externos(text)
+    if url_info["urls"]:
+        return True, "lectura_url_con_url_context"
 
     norm = _normalize_search_text(text)
 
@@ -1933,7 +2010,61 @@ def _debe_activar_busqueda_web(user_input: str, history: Optional[list] = None) 
     if is_conceptual_question(text):
         return True, "pregunta_conceptual"
 
+    # 5. Estrategia Web-First en consultas sustantivas (no puramente operativas ni saludos triviales)
+    if len(text) >= 20 and active_specialists != ["operativa_gestion"]:
+        trivial_starts = ("hola", "buenas", "buenos dias", "gracias", "ok", "vale", "perfecto", "si,", "no,")
+        if not (len(text) < 40 and norm.startswith(trivial_starts)):
+            return True, "verificacion_web_abierta"
+
     return False, ""
+
+
+def _extract_url_context_verification(
+    response,
+    expected_urls: List[str],
+) -> Tuple[bool, List[Dict[str, str]]]:
+    """
+    Inspecciona `url_context_metadata` de Gemini para verificar de forma determinista
+    si la URL exacta compartida por el usuario fue recuperada con éxito (URL_RETRIEVAL_STATUS_SUCCESS).
+    Impide que el modelo alucine o mezcle datos de otro anuncio cuando el enlace falla o se bloquea.
+    """
+    verified = False
+    sources: List[Dict[str, str]] = []
+    if not expected_urls:
+        return False, []
+
+    expected_ids = []
+    expected_domains = []
+    for u in expected_urls:
+        nums = re.findall(r"\d{6,}", u)
+        if nums:
+            expected_ids.append(nums[0])
+        m_dom = re.search(r"https?://(?:www\.)?([^/\?]+)", u, flags=re.IGNORECASE)
+        if m_dom:
+            expected_domains.append(m_dom.group(1).lower())
+
+    try:
+        candidates = getattr(response, "candidates", None) or []
+        if not candidates:
+            return False, []
+        ucm = getattr(candidates[0], "url_context_metadata", None)
+        if not ucm:
+            return False, []
+        meta_list = getattr(ucm, "url_metadata", None) or []
+        for item in meta_list:
+            ret_url = (getattr(item, "retrieved_url", None) or "").strip()
+            status_str = str(getattr(item, "url_retrieval_status", "") or "").upper()
+            if "SUCCESS" not in status_str or not ret_url:
+                continue
+            ret_low = ret_url.lower()
+            id_match = (not expected_ids) or any(eid in ret_low for eid in expected_ids)
+            dom_match = (not expected_domains) or any(dom in ret_low for dom in expected_domains)
+            if id_match and dom_match:
+                verified = True
+                sources.append({"title": f"Anuncio consultado ({ret_url.split('?')[0]})", "url": ret_url})
+    except Exception:
+        return False, []
+    return verified, sources
 
 
 def _extract_grounding_sources(response) -> List[Dict[str, str]]:
@@ -2032,7 +2163,14 @@ def get_chat_response(
             "case_switch_reason": case_switch_reason,
         }
     
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
+    # Selección inteligente de modelo: Gemini 2.5 Pro para análisis legal/fiscal/inversión profundo,
+    # Gemini 2.5 Flash para consultas puramente operativas rápidas (ahorro de latencia y cuota).
+    model_pro = CLIENT_CONFIG.get("ai_model", "gemini-2.5-pro")
+    model_fast = CLIENT_CONFIG.get("ai_model_fast", "gemini-2.5-flash")
+    if active_specialists == ["operativa_gestion"]:
+        model_name = model_fast
+    else:
+        model_name = model_pro
     
     # 4. Determinar si Gran Tenedor / 1.500 m² es realmente pertinente en ESTE turno
     norm_turn_text = _normalize_search_text(user_input or "")
@@ -2229,7 +2367,42 @@ def get_chat_response(
         "(3) Si el usuario cambia de asunto/inmueble, incluye `\"reset_caso\": true`."
     )
 
-    use_web_search, web_search_reason = _debe_activar_busqueda_web(user_input, active_history)
+    url_info = _detectar_enlaces_externos(user_input)
+    has_valid_ephemeral_doc = bool(ephemeral_doc and not ephemeral_doc.get("error"))
+    has_url_context_tool = bool(url_info["urls"] and hasattr(types, "UrlContext"))
+    url_guardrail_block = ""
+    if url_info["has_portal_url"]:
+        portals_list = ", ".join(url_info["portal_urls"][:2])
+        if has_url_context_tool:
+            url_guardrail_block = (
+                "\n\n<lectura_url_portal_inmobiliario_estricta>\n"
+                f"El usuario ha compartido un enlace de portal inmobiliario ({portals_list}).\n"
+                "REGLAS ESTRICTAS DE LECTURA VERIFICADA (PRIORIDAD MÁXIMA):\n"
+                "1. Utiliza la herramienta `url_context` para abrir y leer directamente la URL EXACTA proporcionada por el usuario.\n"
+                "2. Extrae y cita EXCLUSIVAMENTE los datos reales que aparezcan en esa URL exacta (ciudad, calle/zona, precio, m², habitaciones, baños, planta, ascensor, estado). Verifica que corresponden exactamente a ese enlace y NUNCA mezcles ni sustituyas con otro anuncio diferente.\n"
+                "3. **PROHIBIDO** inventar campos que no aparezcan en la ficha (como IBI, comunidad, Valor de Referencia o reforma): indícalos claramente como no publicados y pregúntalos al usuario.\n"
+                "4. Si `url_context` no logra leer esa URL exacta (anuncio borrado o bloqueado), dilo con total transparencia SIN inventar ni deducir ningún dato y pide captura de pantalla/PDF o el texto del anuncio.\n"
+                "</lectura_url_portal_inmobiliario_estricta>"
+            )
+        elif not url_info["tiene_datos_copiados"] and not has_valid_ephemeral_doc:
+            url_guardrail_block = (
+                "\n\n<alerta_enlace_portal_inmobiliario_inaccesible>\n"
+                f"El usuario ha compartido un enlace de portal inmobiliario ({portals_list}) SIN copiar los datos del anuncio ni adjuntar captura/PDF.\n"
+                "NO puedes abrir el enlace; **PROHIBIDO** inventar ningún dato del inmueble. Pide captura/PDF o los datos del anuncio.\n"
+                "</alerta_enlace_portal_inmobiliario_inaccesible>"
+            )
+    elif url_info["has_other_url"]:
+        url_guardrail_block = (
+            "\n\n<lectura_url_externa>\n"
+            "El usuario incluyó una URL externa. Usa `url_context` para leer su contenido exacto; nunca inventes cifras, direcciones ni citas que no figuren verificadas en esa página.\n"
+            "</lectura_url_externa>"
+        )
+
+    use_web_search, web_search_reason = _debe_activar_busqueda_web(
+        user_input,
+        active_history,
+        active_specialists=active_specialists,
+    )
     web_search_block = ""
     if use_web_search and hasattr(types, "GoogleSearch"):
         challenge_protocol = ""
@@ -2254,7 +2427,7 @@ def get_chat_response(
         )
 
     full_system_instruction = (
-        f"{system_instruction}{motor_block}{web_search_block}{fecha_block}{external_hint}{ephemeral_doc_block}\n\n"
+        f"{system_instruction}{motor_block}{url_guardrail_block}{web_search_block}{fecha_block}{external_hint}{ephemeral_doc_block}\n\n"
         f"Información de Contexto (Base Documental interna — NUNCA muestres nombres de archivos .md ni rutas de carpetas al usuario):\n{contexto_seguro}"
     )
 
@@ -2266,17 +2439,25 @@ def get_chat_response(
     try:
         gen_config_kwargs: Dict[str, Any] = {
             "system_instruction": full_system_instruction,
-            "temperature": 0.15,
-            "max_output_tokens": 4096,
+            "temperature": 0.2,
+            "max_output_tokens": 8192,
         }
-        # Activar Google Search Grounding selectivo para contrastar doctrina/jurisprudencia/datos vivos.
-        # NOTA CRÍTICA Gemini 2.5 Flash: omitir `thinking_config` activa pensamiento dinámico por defecto,
-        # lo que al combinarse con `GoogleSearch` puede filtrar trazas `tool_code`/`thought` o devolver 0 partes.
-        # Por eso, cuando `GoogleSearch` está activo fijamos explícitamente `thinking_budget=0`.
+        # Activar Google Search Grounding + UrlContext (cuando hay URLs) con razonamiento limpio:
+        # - En Gemini 2.5 Pro: `thinking_budget=1024` (razonamiento profundo + grounding/url_context).
+        # - En Gemini 2.5 Flash con tools: `thinking_budget=0` (evita fugas `tool_code`/`thought`).
+        is_pro_model = "pro" in str(model_name).lower()
+        active_tools = []
+        if has_url_context_tool:
+            active_tools.append(types.Tool(url_context=types.UrlContext()))
         if use_web_search and hasattr(types, "GoogleSearch"):
-            gen_config_kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
+            active_tools.append(types.Tool(google_search=types.GoogleSearch()))
+
+        if active_tools:
+            gen_config_kwargs["tools"] = active_tools
             if "2.5" in str(model_name) and hasattr(types, "ThinkingConfig"):
-                gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+                gen_config_kwargs["thinking_config"] = types.ThinkingConfig(
+                    thinking_budget=1024 if is_pro_model else 0
+                )
         elif "2.5" in str(model_name) and hasattr(types, "ThinkingConfig"):
             gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=2048)
 
@@ -2301,10 +2482,31 @@ def get_chat_response(
                     contents=contents,
                     config=types.GenerateContentConfig(**gen_config_kwargs)
                 )
+            elif is_pro_model and model_fast and model_fast != model_name:
+                # Fallback automático de Pro -> Flash si Pro agota cuota o falla de forma transitoria
+                print(f"⚠️ Fallback automático de {model_name} a {model_fast}: {str(cfg_err)[:90]}")
+                fb_kwargs = dict(gen_config_kwargs)
+                if use_web_search and "2.5" in str(model_fast) and hasattr(types, "ThinkingConfig"):
+                    fb_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+                response = llamar_gemini_con_rotacion_y_reintento(
+                    model_name=model_fast,
+                    contents=contents,
+                    config=types.GenerateContentConfig(**fb_kwargs)
+                )
             else:
                 raise cfg_err
         raw_response = _extract_clean_response_text(response)
         web_sources = _extract_grounding_sources(response)
+
+        # Verificación determinista post-respuesta para enlaces de portales inmobiliarios (Idealista, Fotocasa, etc.):
+        # Si UrlContext recuperó el anuncio real (URL_RETRIEVAL_STATUS_SUCCESS), añadimos la fuente y seguimos.
+        # Si falló/bloqueó y el usuario no pegó datos ni adjuntó captura/PDF, interceptamos para garantizar 0 alucinaciones.
+        url_ctx_verified = False
+        if url_info["has_portal_url"]:
+            url_ctx_verified, url_ctx_sources = _extract_url_context_verification(response, url_info["portal_urls"])
+            if url_ctx_sources:
+                existing_urls = {s.get("url") for s in web_sources}
+                web_sources = [s for s in url_ctx_sources if s.get("url") not in existing_urls] + web_sources
 
         # Red de seguridad anti-respuesta vacía (ej. respuesta transitoria con 0 partes en Grounding)
         if not raw_response:
@@ -2319,6 +2521,25 @@ def get_chat_response(
             )
             raw_response = _extract_clean_response_text(response_fb)
             web_sources = _extract_grounding_sources(response_fb) or web_sources
+            url_ctx_verified = False
+
+        if (
+            url_info["has_portal_url"]
+            and not url_ctx_verified
+            and not url_info["tiene_datos_copiados"]
+            and not has_valid_ephemeral_doc
+        ):
+            raw_response = (
+                "No he podido recuperar en este momento el contenido exacto de ese enlace de portal inmobiliario "
+                "(puede que el anuncio haya sido retirado o que el portal esté limitando temporalmente el acceso). "
+                "Para evitar mezclar o adivinar datos de otro inmueble, prefiero no analizarlo a ciegas.\n\n"
+                "Puedes pasármelo de cualquiera de estas dos formas para que lo estudiemos al detalle:\n"
+                "1. **Sube una captura de pantalla o PDF del anuncio** con el botón de adjuntar.\n"
+                "2. **Copia y pega aquí los datos clave** (precio, ciudad/barrio, m², habitaciones, planta/ascensor, estado/reforma, comunidad e IBI) "
+                "y dime si comprarías al contado o con financiación.\n\n"
+                "*Orientación jurídica, fiscal y financiera automatizada basada en la normativa española vigente. "
+                "No sustituye el asesoramiento personalizado de un abogado colegiado, asesor fiscal o entidad financiera.*"
+            )
 
         # 1. Extraer y fusionar actualización de perfil de sesión [PROFILE_UPDATE] y validar con motor determinista
         text_part, updated_profile = _extract_and_merge_profile(raw_response, current_profile)
@@ -2430,7 +2651,7 @@ def generate_dynamic_roles(knowledge_context):
     if not client or not knowledge_context.strip():
         return default_roles
 
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
+    model_name = CLIENT_CONFIG.get("ai_model_fast", "gemini-2.5-flash")
     
     prompt = f"""
     Analiza el siguiente contenido educativo y define 4 niveles o roles jerárquicos adecuados para un estudiante de este material.
@@ -2467,7 +2688,7 @@ def generate_dynamic_topics(knowledge_context):
     if not client or not knowledge_context.strip():
         return default_topics
 
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
+    model_name = CLIENT_CONFIG.get("ai_model_fast", "gemini-2.5-flash")
     sampled_context = _sample_knowledge_for_training(
         CLIENT_CONFIG.get("knowledge_base_folder"),
         knowledge_context,
@@ -2821,7 +3042,7 @@ def analyze_prompt_patterns(prompts_list):
     if not client or not prompts_list:
         return []
 
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
+    model_name = CLIENT_CONFIG.get("ai_model_fast", "gemini-2.5-flash")
     
     # Tomamos una muestra representativa si son muchos para no saturar el contexto
     sample_prompts = prompts_list[:50] if len(prompts_list) > 50 else prompts_list
@@ -2962,7 +3183,7 @@ def generate_action_plan(patterns, focus="Global", knowledge_context=""):
     if not client:
         return "⚠️ Error: No se pudo conectar con el motor de IA para generar el plan."
 
-    model_name = CLIENT_CONFIG.get("ai_model", "gemini-2.5-flash")
+    model_name = CLIENT_CONFIG.get("ai_model_fast", "gemini-2.5-flash")
     
     # Serializar patrones (limitado para no saturar contexto si hay muchos)
     patterns_summary = json.dumps(patterns[:30], indent=2, ensure_ascii=False)

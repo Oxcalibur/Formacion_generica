@@ -3,8 +3,11 @@ boe_id: BOE-A-1994-26003
 norma: "Ley 29/1994, de Arrendamientos Urbanos (LAU)"
 ambito: ES_NACIONAL
 temas: [vivienda_habitual, temporada, fianza, desistimiento, renta]
+fecha_publicacion_boe: 19941125
+fecha_vigencia_boe: 19950101
+estatus_derogacion: N
 fecha_actualizacion_boe: 20261113T084105Z
-fecha_descarga: 2026-11-22
+fecha_descarga: 2026-11-26
 bloques_vigentes: 88
 ---
 
@@ -113,6 +116,7 @@ Artículo 10. Prórroga del contrato.
 2. En los contratos de arrendamiento de vivienda habitual sujetos a la presente ley en los que finalice el periodo de prórroga obligatoria previsto en el artículo 9.1, o el periodo de prórroga tácita previsto en el artículo 10.1, podrá aplicarse, previa solicitud del arrendatario, una prórroga extraordinaria del plazo del contrato de arrendamiento por un periodo máximo de un año, durante el cual se seguirá aplicando los términos y condiciones establecidos para el contrato en vigor. Esta solicitud de prórroga extraordinaria requerirá la acreditación por parte del arrendatario de una situación de vulnerabilidad social y económica sobre la base de un informe o certificado emitido en el último año por los servicios sociales de ámbito municipal o autonómico y deberá ser aceptada obligatoriamente por el arrendador cuando este sea un gran tenedor de vivienda de acuerdo con la definición establecida en la Ley 12/2023, de 24 de mayo, por el derecho a la vivienda, salvo que se hubiese suscrito entre las partes un nuevo contrato de arrendamiento.
 3. En los contratos de arrendamiento de vivienda habitual sujetos a la presente ley, en los que el inmueble se ubique en una zona de mercado residencial tensionado y dentro del periodo de vigencia de la declaración de la referida zona en los términos dispuestos en la legislación estatal en materia de vivienda, finalice el periodo de prórroga obligatoria previsto en el artículo 9.1 de esta ley o el periodo de prórroga tácita previsto en el apartado anterior, previa solicitud del arrendatario, podrá prorrogarse de manera extraordinaria el contrato de arrendamiento por plazos anuales, por un periodo máximo de tres años, durante los cuales se seguirán aplicando los términos y condiciones establecidos para el contrato en vigor. Esta solicitud de prórroga extraordinaria deberá ser aceptada obligatoriamente por el arrendador, salvo que se hayan fijado otros términos o condiciones por acuerdo entre las partes, se haya suscrito un nuevo contrato de arrendamiento con las limitaciones en la renta que en su caso procedan por aplicación de lo dispuesto en los apartados 6 y 7 del artículo 17 de esta ley, o en el caso de que el arrendador haya comunicado en los plazos y condiciones establecidos en el artículo 9.3 de esta ley, la necesidad de ocupar la vivienda arrendada para destinarla a vivienda permanente para sí o sus familiares en primer grado de consanguinidad o por adopción o para su cónyuge en los supuestos de sentencia firme de separación, divorcio o nulidad matrimonial.
 4. Al contrato prorrogado, le seguirá siendo de aplicación el régimen legal y convencional al que estuviera sometido.
+Se dejan sin efecto las modificaciones de este artículo establecidas por el Real Decreto-ley 26/2026, de 29 de septiembre, y por el Real Decreto-ley 27/2026, de 29 de septiembre, por sendas Resoluciones de 2 de octubre de 2026, que publican los Acuerdos del Congreso de los Diputados por los que se derogan los citados Reales Decretos-leyes. Ref. BOE-A-2026-20526 y Ref. BOE-A-2026-20527
 
 ### Artículo 11
 

@@ -1,0 +1,131 @@
+{
+  "BOE-A-1994-26003:01_LAU_consolidada.md": {
+    "boe_id": "BOE-A-1994-26003",
+    "ruta": "knowledge_base/01_Normativa_Estatal_Vigente/01_LAU_consolidada.md",
+    "fecha_actualizacion_boe": "20261113T084105Z",
+    "ultima_descarga": "2026-11-26",
+    "bloques_vigentes": 88,
+    "tokens_aprox": 33294
+  },
+  "BOE-A-2023-12203:02_Ley_Vivienda_2023.md": {
+    "boe_id": "BOE-A-2023-12203",
+    "ruta": "knowledge_base/01_Normativa_Estatal_Vigente/02_Ley_Vivienda_2023.md",
+    "fecha_actualizacion_boe": "20261029T134918Z",
+    "ultima_descarga": "2026-11-26",
+    "bloques_vigentes": 69,
+    "tokens_aprox": 37319
+  },
+  "BOE-A-1889-4763:03_Codigo_Civil_Arrendamientos.md": {
+    "boe_id": "BOE-A-1889-4763",
+    "ruta": "knowledge_base/01_Normativa_Estatal_Vigente/03_Codigo_Civil_Arrendamientos.md",
+    "fecha_actualizacion_boe": "20260907T125934Z",
+    "ultima_descarga": "2026-11-26",
+    "bloques_vigentes": 41,
+    "tokens_aprox": 2980
+  },
+  "BOE-A-2000-323:04_LEC_Desahucios.md": {
+    "boe_id": "BOE-A-2000-323",
+    "ruta": "knowledge_base/01_Normativa_Estatal_Vigente/04_LEC_Desahucios.md",
+    "fecha_actualizacion_boe": "20261126T090623Z",
+    "ultima_descarga": "2026-11-26",
+    "bloques_vigentes": 17,
+    "tokens_aprox": 13275
+  },
+  "BOE-A-1960-10906:05_LPH_Propiedad_Horizontal.md": {
+    "boe_id": "BOE-A-1960-10906",
+    "ruta": "knowledge_base/01_Normativa_Estatal_Vigente/05_LPH_Propiedad_Horizontal.md",
+    "fecha_actualizacion_boe": "20261005T085250Z",
+    "ultima_descarga": "2026-11-26",
+    "bloques_vigentes": 34,
+    "tokens_aprox": 15166
+  },
+  "BOE-A-2026-20822:06_RDL_28_2026_Estabilidad_Alquileres.md": {
+    "boe_id": "BOE-A-2026-20822",
+    "ruta": "knowledge_base/01_Normativa_Estatal_Vigente/06_RDL_28_2026_Estabilidad_Alquileres.md",
+    "fecha_actualizacion_boe": "20261113T083442Z",
+    "ultima_descarga": "2026-11-25",
+    "bloques_vigentes": 7,
+    "tokens_aprox": 4261
+  },
+  "BOE-A-2026-20823:07_RDL_29_2026_Vivienda.md": {
+    "boe_id": "BOE-A-2026-20823",
+    "ruta": "knowledge_base/01_Normativa_Estatal_Vigente/07_RDL_29_2026_Vivienda.md",
+    "fecha_actualizacion_boe": "20261113T084620Z",
+    "ultima_descarga": "2026-11-25",
+    "bloques_vigentes": 46,
+    "tokens_aprox": 60086
+  },
+  "BOE-A-1889-4763:08_Codigo_Civil_Compraventa_y_Arras.md": {
+    "boe_id": "BOE-A-1889-4763",
+    "ruta": "knowledge_base/01_Normativa_Estatal_Vigente/08_Codigo_Civil_Compraventa_y_Arras.md",
+    "fecha_actualizacion_boe": "20260907T125934Z",
+    "ultima_descarga": "2026-11-25",
+    "bloques_vigentes": 61,
+    "tokens_aprox": 5743
+  },
+  "BOE-A-2006-20764:01_LIRPF_Alquileres.md": {
+    "boe_id": "BOE-A-2006-20764",
+    "ruta": "knowledge_base/05_Fiscalidad_y_Financiacion/01_LIRPF_Alquileres.md",
+    "fecha_actualizacion_boe": "20261125T115541Z",
+    "ultima_descarga": "2026-11-26",
+    "bloques_vigentes": 6,
+    "tokens_aprox": 4724
+  },
+  "BOE-A-2007-6820:02_Reglamento_IRPF_Amortizacion.md": {
+    "boe_id": "BOE-A-2007-6820",
+    "ruta": "knowledge_base/05_Fiscalidad_y_Financiacion/02_Reglamento_IRPF_Amortizacion.md",
+    "fecha_actualizacion_boe": "20261125T122145Z",
+    "ultima_descarga": "2026-11-26",
+    "bloques_vigentes": 4,
+    "tokens_aprox": 1705
+  },
+  "BOE-A-1993-25359:03_Ley_ITP_AJD_Compra.md": {
+    "boe_id": "BOE-A-1993-25359",
+    "ruta": "knowledge_base/05_Fiscalidad_y_Financiacion/03_Ley_ITP_AJD_Compra.md",
+    "fecha_actualizacion_boe": "20261126T065532Z",
+    "ultima_descarga": "2026-11-26",
+    "bloques_vigentes": 6,
+    "tokens_aprox": 4385
+  },
+  "BOE-A-2019-3814:04_LCCI_Hipotecas.md": {
+    "boe_id": "BOE-A-2019-3814",
+    "ruta": "knowledge_base/05_Fiscalidad_y_Financiacion/04_LCCI_Hipotecas.md",
+    "fecha_actualizacion_boe": "20261126T101622Z",
+    "ultima_descarga": "2026-11-26",
+    "bloques_vigentes": 6,
+    "tokens_aprox": 5711
+  },
+  "BOE-A-2026-20823:06_RDL_29_2026_Vivienda.md": {
+    "boe_id": "BOE-A-2026-20823",
+    "ruta": "knowledge_base/01_Normativa_Estatal_Vigente/06_RDL_29_2026_Vivienda.md",
+    "fecha_actualizacion_boe": "20261113T084620Z",
+    "ultima_descarga": "2026-11-26",
+    "bloques_vigentes": 46,
+    "tokens_aprox": 60112
+  },
+  "BOE-A-1889-4763:07_Codigo_Civil_Compraventa_y_Arras.md": {
+    "boe_id": "BOE-A-1889-4763",
+    "ruta": "knowledge_base/01_Normativa_Estatal_Vigente/07_Codigo_Civil_Compraventa_y_Arras.md",
+    "fecha_actualizacion_boe": "20260907T125934Z",
+    "ultima_descarga": "2026-11-26",
+    "bloques_vigentes": 61,
+    "tokens_aprox": 5764
+  },
+  "ZONAS_TENSIONADAS": {
+    "ruta": "knowledge_base/04_Datos_Volatiles_y_CCAA/03_resoluciones_boe_zonas_tensionadas.md",
+    "resoluciones": [
+      "BOE-A-2026-9175",
+      "BOE-A-2026-2448",
+      "BOE-A-2026-23088",
+      "BOE-A-2026-16532",
+      "BOE-A-2025-8636",
+      "BOE-A-2025-21901",
+      "BOE-A-2025-1721",
+      "BOE-A-2025-15728",
+      "BOE-A-2024-5214",
+      "BOE-A-2024-20576"
+    ],
+    "ultima_descarga": "2026-11-26",
+    "tokens_aprox": 21793
+  }
+}

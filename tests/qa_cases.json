@@ -330,6 +330,119 @@
           ]
         }
       ]
+    },
+    {
+      "id": "feedback_251126_casos_estrategicos",
+      "name": "Suite Pro: RDL 29/2026 completo, Cataluña 5 viviendas (Ley 11/2026), Flip con inquilino y Andalucía máxima rentabilidad",
+      "description": "Valida los 4 casos clave del feedback comparativo frente a ChatGPT: profundidad real del RDL 29/2026, normativa catalana Ley 11/2026 sin falsos descartes, anti-trampa en flip con inquilino (fraude de ley) y comparativa real de provincias andaluzas.",
+      "turns": [
+        {
+          "turn_id": "T1_resumen_completo_rdl_29_2026",
+          "prompt": "Hazme un resumen de lo que impacte a mi negocio inmobiliario del último decreto ley aprobado",
+          "expected_specialists_include": ["legal_arrendamientos"],
+          "expected_case_switched": false,
+          "expected_web_search": true,
+          "must_contain_any": [
+            ["29/2026"],
+            ["prorroga"],
+            ["temporada", "temporal"],
+            ["habitaciones"],
+            ["irpf", "reduccion"]
+          ],
+          "must_not_contain": [
+            "deberas incorporar",
+            "tool_code",
+            ".md"
+          ],
+          "judge_criteria": [
+            "Cubre de forma completa y estructurada (no solo 1 o 2 puntos) las principales medidas vigentes del RDL 29/2026 (vigente desde el 8/10/2026, convalidado por el Congreso) que afectan a un propietario/inversor: prórroga extraordinaria, actualización de rentas, cambios en IRPF, endurecimiento del alquiler temporal, límite en alquiler por habitaciones, protección en desahucios y derecho de tanteo/retracto (Art. 25 LAU).",
+            "Usa un tono consultivo y estratégico (evita tonos imperativos secos como 'deberás incorporar') y NO filtra rutas .md ni trazas internas."
+          ]
+        },
+        {
+          "turn_id": "T2_cataluna_5_viviendas_ley_11_2026",
+          "prompt": "Cambiando de tema: tengo 5 inmuebles en diferentes zonas de Cataluña, algunas no tensionadas. ¿Me pueden considerar gran tenedor?",
+          "expected_specialists_exact": ["legal_arrendamientos"],
+          "expected_case_switched": true,
+          "expected_web_search": true,
+          "must_contain_any": [
+            ["1.500", "1500"],
+            ["11/2026", "toda cataluna", "territorio catalan", "territorio de cataluna", "con independencia"]
+          ],
+          "must_not_contain": [
+            "tienes 5 inmuebles residenciales en total",
+            "no eres gran tenedor",
+            "tool_code",
+            ".md"
+          ],
+          "judge_criteria": [
+            "NO asume ni escribe que el usuario tenga solo '5 inmuebles en total en España' ni concluye que 'no es gran tenedor'.",
+            "Advierte expresamente de que en Cataluña (Ley 11/2026 autonómica) tener 5 o más viviendas en territorio catalán SÍ puede calificarlo como gran tenedor a efectos autonómicos con independencia de si están en zona tensionada o no, diferenciándolo del plano estatal (Art. 3.k Ley 12/2023).",
+            "Pregunta por datos que SÍ faltan (si tiene más viviendas en el resto de España y la superficie construida residencial >1.500 m²) sin hacer preguntas contradictorias ya descartadas por el usuario."
+          ]
+        },
+        {
+          "turn_id": "T3_flip_inquilino_contrato_temporal_trampa",
+          "prompt": "Cambiando de tema: te planteo una duda sobre una operación de flip que estamos negociando. Queremos comprar una vivienda y escriturar antes de finales de noviembre, pero actualmente tiene un inquilino viviendo en ella. La idea sería, con el ok del inquilino, rescindir de mutuo acuerdo el contrato actual y firmar un nuevo contrato de temporada de máximo 3 meses por 775 €/mes. Mi preocupación es que se considere continuación de vivienda habitual. ¿Cómo lo estructuraríais para darme las mayores garantías?",
+          "expected_specialists_include": ["legal_arrendamientos"],
+          "expected_case_switched": true,
+          "expected_web_search": true,
+          "must_contain_any": [
+            ["fraude de ley", "fraude", "recalific", "riesgo muy alto", "altisimo riesgo", "no recomend", "desaconsej"],
+            ["retencion", "notaria", "llaves", "libre de ocupantes", "entrega diferida", "penalizacion", "incentivo"]
+          ],
+          "must_not_contain": [
+            "tool_code",
+            ".md"
+          ],
+          "judge_criteria": [
+            "Advierte con firmeza jurídica que firmar un contrato 'de temporada' de 3 meses al MISMO inquilino cuya vivienda habitual ya es ese piso conlleva un altísimo riesgo de fraude de ley / recalificación como vivienda habitual (especialmente tras el RDL 29/2026) y NO lo recomienda como solución segura.",
+            "Propone alternativas profesionales reales para blindar la salida: condicionar la compra/arras a entrega libre de ocupantes, o bien acuerdo de resolución con entrega diferida de posesión + retención en notaría/aval + incentivo económico (cash-for-keys) pagadero únicamente contra entrega efectiva de llaves y penalización diaria."
+          ]
+        },
+        {
+          "turn_id": "T4_andalucia_maxima_rentabilidad_provincias",
+          "prompt": "Cambiando de tema: quiero comprar para alquilar en larga estancia. ¿Qué provincia de Andalucía me sugieres si no tengo límite de ticket de entrada y lo que quiero es la máxima rentabilidad?",
+          "expected_specialists_include": ["inversion_financiacion"],
+          "expected_case_switched": true,
+          "expected_web_search": true,
+          "must_contain_any": [
+            ["huelva", "jaen", "almeria", "cordoba"],
+            ["malaga", "sevilla", "granada"]
+          ],
+          "must_not_contain": [
+            "tool_code",
+            ".md"
+          ],
+          "judge_criteria": [
+            "Incluye y analiza provincias andaluzas líderes en máxima rentabilidad bruta porcentual (como Huelva, Jaén, Almería o Córdoba) en lugar de limitarse solo a Málaga, Sevilla y Granada.",
+            "Distingue claramente entre máxima rentabilidad bruta porcentual frente al equilibrio rentabilidad/liquidez/revalorización/demanda (Málaga, Sevilla, Granada), con un enfoque práctico para quien no tiene límite de ticket."
+          ]
+        },
+        {
+          "turn_id": "T5_enlace_idealista_url_context_real",
+          "prompt": "Cambiando de tema: ¿qué te parece esta inversión para comprar y alquilar? https://www.idealista.com/inmueble/112896706/?utm_medium=socialmedia&utm_campaign=private_sendadtofriend&utm_source=notifications",
+          "expected_specialists_include": ["inversion_financiacion"],
+          "expected_case_switched": true,
+          "expected_web_search": true,
+          "must_contain_any": [
+            ["alcala de henares", "via complutense", "229.000", "no he podido recuperar"]
+          ],
+          "must_not_contain": [
+            "sierra de palomera",
+            "vallecas",
+            "170.000",
+            "60 m2",
+            "60 m²",
+            "tool_code",
+            ".md"
+          ],
+          "judge_criteria": [
+            "NO mezcla ni alucina datos de otro anuncio (jamás menciona Vallecas, Sierra de Palomera, 170.000 € ni 60 m²).",
+            "Lee el anuncio real mediante UrlContext (Alcalá de Henares / Vía Complutense / 229.000 € / 77 m² / 3 habitaciones / 11ª planta) y realiza un análisis serio pidiendo solo los datos que faltan (reforma, IBI/comunidad, financiación y perfil fiscal), O bien —únicamente si el anuncio dejara de estar disponible— avisa con transparencia sin inventar ningún dato."
+          ]
+        }
+      ]
     }
   ]
 }
