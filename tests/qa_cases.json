@@ -443,6 +443,94 @@
           ]
         }
       ]
+    },
+    {
+      "id": "testing1_idealista_inversion_coherencia",
+      "name": "Suite Testing1: Enlace Idealista -> Router Inversión -> Seguimiento 'op1' -> Habitaciones/Salón + Coherencia Aritmética y RDL 29/2026",
+      "description": "Casos de regresión nacidos del análisis forense de Testing1 (26/11/2026): verifica enrutamiento directo a Inversión en enlaces de Idealista, persistencia de especialista en 'op1'/'ambas', coherencia matemática entre Cash-Flow e IRPF, seguro de hogar + impago proactivo, vigencia correcta del RDL 29/2026 (08/10/2026, nunca 15/11/2026) y Art. 17.9 LAU + habitabilidad en alquiler por habitaciones.",
+      "turns": [
+        {
+          "turn_id": "T1_anuncio_idealista_router_inversion",
+          "prompt": "analiza este anuncio: https://www.idealista.com/inmueble/112896706/?utm_medium=socialmedia&utm_campaign=private_sendadtofriend&utm_source=notifications",
+          "expected_specialists_include": ["inversion_financiacion"],
+          "expected_case_switched": false,
+          "expected_web_search": true,
+          "must_contain_any": [
+            ["alcala de henares", "via complutense", "229.000", "no he podido recuperar"]
+          ],
+          "must_not_contain": [
+            "sierra de palomera",
+            "vallecas",
+            "170.000",
+            "15/11/2026",
+            "tool_code",
+            ".md"
+          ],
+          "judge_criteria": [
+            "Lee el anuncio real mediante UrlContext (Alcalá de Henares / Vía Complutense / 229.000 € / 77 m² / 3 hab.) sin alucinar otro inmueble ni Vallecas.",
+            "Confirma que Alcalá de Henares NO es zona tensionada y solicita de forma ordenada los datos que no figuran en el anuncio (IBI, comunidad, Valor de Referencia, financiación/perfil fiscal)."
+          ]
+        },
+        {
+          "turn_id": "T2_ambas_gastos_y_transparencia_renta",
+          "prompt": "ambas, el ibi seran unos 200€, la comunidad 50€/mes y valor de referencia menor que el precio de compra",
+          "expected_specialists_include": ["inversion_financiacion"],
+          "expected_case_switched": false,
+          "must_contain_any": [
+            ["229.000", "229000"],
+            ["seguro de hogar", "seguro hogar"],
+            ["impago", "vacancia", "mantenimiento"]
+          ],
+          "must_not_contain": [
+            "15/11/2026",
+            "tool_code",
+            ".md"
+          ],
+          "judge_criteria": [
+            "Calcula el coste total de compra en Madrid (ITP 6 % sobre 229.000 € = 13.740 € + gastos notaría/registro/gestoría) y la rentabilidad/IRPF manteniendo 100 % coherencia en los gastos operativos (incluye IBI, comunidad y seguro de hogar de forma consistente y plantea proactivamente seguro de impago, vacancia o mantenimiento).",
+            "Etiqueta de forma transparente el origen de la renta estimada (si es escenario conservador u horquilla de mercado) y NO asume perfil fiscal ni condiciones de hipoteca sin advertirlo como ejemplo orientativo o pedir confirmación."
+          ]
+        },
+        {
+          "turn_id": "T3_seguimiento_corto_op1_hereda_especialista",
+          "prompt": "op1",
+          "expected_specialists_include": ["inversion_financiacion"],
+          "expected_specialists_exclude": ["operativa_gestion"],
+          "expected_case_switched": false,
+          "must_not_contain": [
+            "15/11/2026",
+            "tool_code",
+            ".md"
+          ],
+          "judge_criteria": [
+            "Responde con total coherencia a la Opción 1 que el propio asistente propuso en el turno anterior, manteniendo la coherencia aritmética exacta (mismos gastos operativos en Cash-Flow e IRPF si calcula ambos) y sin cortarse a mitad de respuesta."
+          ]
+        },
+        {
+          "turn_id": "T4_habitaciones_salon_4hab_rdl_29_2026_coherencia",
+          "prompt": "¿Qué te parece esta operación para alquiler por habitaciones (3 habitaciones o convirtiendo el salón en una 4ª habitación)? Hazme la comparativa numérica y de riesgos.",
+          "expected_specialists_include": ["inversion_financiacion"],
+          "expected_case_switched": false,
+          "must_contain_any": [
+            ["17.9", "articulo 17", "suma de las rentas", "suma de rentas"],
+            ["habitabilidad", "sala de estar", "estancia", "urbanist"],
+            ["v2457", "reduccion", "50%"]
+          ],
+          "must_not_contain": [
+            "15/11/2026",
+            "15 de noviembre de 2026",
+            "error de comunicacion inaceptable",
+            "no dejas pasar ni una",
+            "tool_code",
+            ".md"
+          ],
+          "judge_criteria": [
+            "Aplica con coherencia el Art. 17.9 LAU (RDL 29/2026 vigente desde 08/10/2026 — NUNCA dice 15/11/2026) advirtiendo junto a los números que la suma de rentas por habitaciones no puede superar la renta unitaria de la vivienda completa.",
+            "Advierte firmemente de los riesgos legales/urbanísticos de convertir el salón en 4ª habitación (incumplimiento de habitabilidad/estancia mínima, posibles sanciones urbanísticas y/o riesgos sobre cédula, seguro o validez contractual).",
+            "Las cifras de la comparativa son aritméticamente coherentes entre Cash-Flow/ROCE e IRPF (sin descuadres de gastos operativos ni dividir el alquiler tradicional por un capital con reforma de 4 habitaciones) y la respuesta está 100 % completa sin cortes."
+          ]
+        }
+      ]
     }
   ]
 }

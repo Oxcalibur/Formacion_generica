@@ -1428,6 +1428,18 @@ def _sanitize_internal_references(text: str) -> str:
     return cleaned.strip()
 
 
+def _is_truncated_by_max_tokens(response) -> bool:
+    """Detecta de forma determinista si Gemini cortó la respuesta por alcanzar max_output_tokens."""
+    try:
+        candidates = getattr(response, "candidates", None) or []
+        if not candidates:
+            return False
+        fin = str(getattr(candidates[0], "finish_reason", "") or "").upper()
+        return "MAX_TOKENS" in fin
+    except Exception:
+        return False
+
+
 def _extract_clean_response_text(response) -> str:
     """
     Extrae únicamente el texto visible para el usuario de la respuesta de Gemini,
@@ -1829,9 +1841,11 @@ def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str
             decoder = json.JSONDecoder()
             update_obj, end_pos = decoder.raw_decode(parse_src[brace_idx:])
             if isinstance(update_obj, dict):
-                # Si el modelo señala cambio de caso, reiniciar la Capa 2 antes de aplicar los datos del nuevo caso
+                # Si el modelo señala cambio de caso, reiniciar la Capa 2 preservando especialistas_activos de este turno
                 if update_obj.get("reset_caso") is True:
+                    saved_specs = list(merged.get("especialistas_activos") or [])
                     merged = reset_case_state(merged, case_start_idx=merged.get("case_start_idx", 0))
+                    merged["especialistas_activos"] = saved_specs
 
                 for k, v in update_obj.items():
                     if k == "reset_caso" or v is None:
@@ -2163,10 +2177,13 @@ def get_chat_response(
             "case_switch_reason": case_switch_reason,
         }
     
-    # Selección inteligente de modelo: Gemini 2.5 Pro para análisis legal/fiscal/inversión profundo,
-    # Gemini 2.5 Flash para consultas puramente operativas rápidas (ahorro de latencia y cuota).
-    model_pro = CLIENT_CONFIG.get("ai_model", "gemini-2.5-pro")
-    model_fast = CLIENT_CONFIG.get("ai_model_fast", "gemini-2.5-flash")
+    # Selección inteligente de modelo en 3 niveles:
+    # - Principal Pro: Gemini 3.1 Pro Preview (razonamiento profundo, tablas y legal/fiscal/inversión)
+    # - Respaldo Pro estable (GA): Gemini 2.5 Pro
+    # - Rápido estable (GA): Gemini 3.8 Flash (para operativa pura y respaldo final)
+    model_pro = CLIENT_CONFIG.get("ai_model", "gemini-3.1-pro-preview")
+    model_fallback = CLIENT_CONFIG.get("ai_model_fallback", "gemini-2.5-pro")
+    model_fast = CLIENT_CONFIG.get("ai_model_fast", "gemini-3.8-flash")
     if active_specialists == ["operativa_gestion"]:
         model_name = model_fast
     else:
@@ -2440,26 +2457,39 @@ def get_chat_response(
         gen_config_kwargs: Dict[str, Any] = {
             "system_instruction": full_system_instruction,
             "temperature": 0.2,
-            "max_output_tokens": 8192,
+            "max_output_tokens": 16384,
         }
-        # Activar Google Search Grounding + UrlContext (cuando hay URLs) con razonamiento limpio:
-        # - En Gemini 2.5 Pro: `thinking_budget=1024` (razonamiento profundo + grounding/url_context).
+        # Activar UrlContext y/o Google Search Grounding con razonamiento limpio:
+        # - Si hay URL de portal inmobiliario (Idealista, Fotocasa, etc.), pasamos UrlContext DEDICADO
+        #   para que Gemini 3.1 Pro / 2.5 Pro abra SIEMPRE la ficha exacta (evitando que Search devuelva otro anuncio).
+        # - Para el resto de consultas sustantivas, activamos GoogleSearch (+ UrlContext si hay otra URL).
+        # - En Gemini 2.5/3.x Pro: `thinking_budget=1024` con tools (2048 sin tools).
         # - En Gemini 2.5 Flash con tools: `thinking_budget=0` (evita fugas `tool_code`/`thought`).
         is_pro_model = "pro" in str(model_name).lower()
+        supports_thinking = any(tag in str(model_name).lower() for tag in ("2.5", "3.")) and hasattr(types, "ThinkingConfig")
         active_tools = []
-        if has_url_context_tool:
+        if has_url_context_tool and url_info["has_portal_url"]:
             active_tools.append(types.Tool(url_context=types.UrlContext()))
-        if use_web_search and hasattr(types, "GoogleSearch"):
-            active_tools.append(types.Tool(google_search=types.GoogleSearch()))
+        else:
+            if has_url_context_tool:
+                active_tools.append(types.Tool(url_context=types.UrlContext()))
+            if use_web_search and hasattr(types, "GoogleSearch"):
+                active_tools.append(types.Tool(google_search=types.GoogleSearch()))
 
         if active_tools:
             gen_config_kwargs["tools"] = active_tools
-            if "2.5" in str(model_name) and hasattr(types, "ThinkingConfig"):
-                gen_config_kwargs["thinking_config"] = types.ThinkingConfig(
-                    thinking_budget=1024 if is_pro_model else 0
-                )
-        elif "2.5" in str(model_name) and hasattr(types, "ThinkingConfig"):
+            if supports_thinking:
+                budget = 1024 if (is_pro_model or "3." in str(model_name).lower()) else 0
+                gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=budget)
+        elif supports_thinking:
             gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=2048)
+
+        active_model_used = model_name
+        fallback_chain = []
+        if is_pro_model:
+            for cand_m in (model_fallback, model_fast):
+                if cand_m and cand_m != model_name and cand_m not in fallback_chain:
+                    fallback_chain.append(cand_m)
 
         try:
             response = llamar_gemini_con_rotacion_y_reintento(
@@ -2470,33 +2500,80 @@ def get_chat_response(
         except Exception as cfg_err:
             err_lower = str(cfg_err).lower()
             retried = False
-            if ("google_search" in err_lower or "tool" in err_lower or "grounding" in err_lower) and "tools" in gen_config_kwargs:
-                gen_config_kwargs.pop("tools", None)
+            retry_kwargs = dict(gen_config_kwargs)
+            if ("google_search" in err_lower or "url_context" in err_lower or "tool" in err_lower or "grounding" in err_lower) and "tools" in retry_kwargs:
+                retry_kwargs.pop("tools", None)
                 retried = True
-            if "thinking" in err_lower and "thinking_config" in gen_config_kwargs:
-                gen_config_kwargs.pop("thinking_config", None)
+            if "thinking" in err_lower and "thinking_config" in retry_kwargs:
+                retry_kwargs.pop("thinking_config", None)
                 retried = True
+
+            response = None
+            last_err = cfg_err
             if retried:
-                response = llamar_gemini_con_rotacion_y_reintento(
-                    model_name=model_name,
-                    contents=contents,
-                    config=types.GenerateContentConfig(**gen_config_kwargs)
-                )
-            elif is_pro_model and model_fast and model_fast != model_name:
-                # Fallback automático de Pro -> Flash si Pro agota cuota o falla de forma transitoria
-                print(f"⚠️ Fallback automático de {model_name} a {model_fast}: {str(cfg_err)[:90]}")
-                fb_kwargs = dict(gen_config_kwargs)
-                if use_web_search and "2.5" in str(model_fast) and hasattr(types, "ThinkingConfig"):
-                    fb_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-                response = llamar_gemini_con_rotacion_y_reintento(
-                    model_name=model_fast,
-                    contents=contents,
-                    config=types.GenerateContentConfig(**fb_kwargs)
-                )
-            else:
-                raise cfg_err
+                try:
+                    response = llamar_gemini_con_rotacion_y_reintento(
+                        model_name=model_name,
+                        contents=contents,
+                        config=types.GenerateContentConfig(**retry_kwargs)
+                    )
+                    gen_config_kwargs = retry_kwargs
+                except Exception as e2:
+                    last_err = e2
+
+            if response is None and fallback_chain:
+                for fb_model in fallback_chain:
+                    try:
+                        print(f"⚠️ Fallback automático de {model_name} a {fb_model}: {str(last_err)[:90]}")
+                        fb_kwargs = dict(gen_config_kwargs)
+                        if "2.5-flash" in str(fb_model).lower() and active_tools and hasattr(types, "ThinkingConfig"):
+                            fb_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+                        response = llamar_gemini_con_rotacion_y_reintento(
+                            model_name=fb_model,
+                            contents=contents,
+                            config=types.GenerateContentConfig(**fb_kwargs)
+                        )
+                        active_model_used = fb_model
+                        break
+                    except Exception as fb_err:
+                        last_err = fb_err
+
+            if response is None:
+                raise last_err
+
         raw_response = _extract_clean_response_text(response)
         web_sources = _extract_grounding_sources(response)
+
+        # Protección anti-corte: si el modelo se detuvo por MAX_TOKENS, continuar automáticamente 1 vez sin repetir
+        if raw_response and _is_truncated_by_max_tokens(response):
+            try:
+                cont_contents = list(contents) + [
+                    types.Content(role="model", parts=[types.Part.from_text(text=raw_response)]),
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(
+                            text="Tu respuesta anterior se cortó por límite de longitud. Continúa EXACTAMENTE desde la última palabra donde se quedó, completando tablas, conclusiones, siguiente paso y aviso legal sin repetir nada de lo ya escrito."
+                        )],
+                    ),
+                ]
+                cont_kwargs = {
+                    "system_instruction": full_system_instruction,
+                    "temperature": 0.2,
+                    "max_output_tokens": 8192,
+                }
+                if any(tag in str(active_model_used).lower() for tag in ("2.5", "3.")) and hasattr(types, "ThinkingConfig"):
+                    cont_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=512)
+                cont_resp = llamar_gemini_con_rotacion_y_reintento(
+                    model_name=active_model_used,
+                    contents=cont_contents,
+                    config=types.GenerateContentConfig(**cont_kwargs),
+                )
+                cont_text = _extract_clean_response_text(cont_resp)
+                if cont_text:
+                    sep = "" if raw_response.endswith(("\n", " ")) else " "
+                    raw_response = f"{raw_response}{sep}{cont_text}".strip()
+            except Exception as cont_err:
+                print(f"⚠️ No se pudo auto-continuar respuesta truncada: {cont_err}")
 
         # Verificación determinista post-respuesta para enlaces de portales inmobiliarios (Idealista, Fotocasa, etc.):
         # Si UrlContext recuperó el anuncio real (URL_RETRIEVAL_STATUS_SUCCESS), añadimos la fuente y seguimos.

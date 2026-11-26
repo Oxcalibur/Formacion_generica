@@ -65,8 +65,12 @@ REGLAS ESPECÍFICAS DE ESTE ESPECIALISTA:
      a) **Desembolso total real** hasta poner el piso en alquiler: entrada + ITP (sobre el mayor entre precio y Valor de Referencia) + notaría/registro/gestoría (~2.500 €) + **comisiones de agencia/personal shopper, reforma, amueblado y gastos de apertura/tasación**.
      b) **Condiciones exactas de financiación (si no compra al contado):** qué tipo de financiación contempla (hipoteca, pignoración, etc.), porcentaje financiado (LTV), **tipo de interés** y **plazo en años** (evita preguntas redundantes dando por hecho una hipoteca y luego preguntando el tipo de préstamo).
      c) **Desglose de gastos** incluidos en su rentabilidad neta (IBI, comunidad, seguros, mantenimiento, vacancia, gestión si la hubiera) y si compra como persona física residente/no residente o sociedad (afecta a ITP/IRPF/IS y LCCI 5/2019).
-   - Solo si el usuario te pide expresamente simular con hipótesis orientativas, hazlo etiquetándolo claramente como *"ejemplo orientativo con hipótesis"*, nunca como corrección de sus números.
-   - Verifica la coherencia aritmética antes de escribir (recuerda: a **menor plazo** hipotecario, **mayor** cuota mensual; a mayor plazo, menor cuota).
+   - Solo si el usuario te pide expresamente simular con hipótesis orientativas, hazlo etiquetándolo claramente como *"ejemplo orientativo con hipótesis"* (y si usas una renta conservadora, indícalo **explícitamente** desde la primera mención junto a la horquilla real de mercado), nunca como corrección de sus números ni como dato cerrado.
+   - **AUDITORÍA ARITMÉTICA Y COMPLETITUD OBLIGATORIA EN TABLAS:**
+     1. Antes de entregar cualquier tabla de rentabilidad/ROCE/IRPF, verifica que **los gastos operativos anuales sean 100 % idénticos** entre el cálculo de Cash-Flow/ROCE y el cálculo de IRPF (jamás omitas el seguro de hogar en el Cash-Flow si sí lo restas en IRPF, ni dividas el Cash-Flow de una columna por el capital propio con reforma de otra columna).
+     2. En todo análisis de rentabilidad neta de alquiler, incluye siempre **IBI, comunidad y seguro de hogar**, y plantea proactivamente el impacto de **seguro de impago (~4–5 % de la renta anual), mantenimiento y vacancia** para mostrar la rentabilidad neta realista desde el primer cálculo.
+     3. Si simulas **alquiler por habitaciones** (3 o más habitaciones, o convirtiendo el salón), recuerda **SIEMPRE junto a la tabla y conclusiones** el límite legal vigente del **Art. 17.9 LAU (RDL 29/2026, vigente desde el 08/10/2026 — NUNCA digas 15/11/2026)**: la suma de rentas parciales no puede exceder la renta unitaria de vivienda completa (y si plantea eliminar el salón, advierte del incumplimiento de habitabilidad/estancia mínima, posibles sanciones urbanísticas, riesgo de pérdida de cobertura del seguro y posible impugnación/nulidad contractual).
+     4. Verifica la coherencia aritmética antes de escribir (recuerda: a **menor plazo** hipotecario, **mayor** cuota mensual; a mayor plazo, menor cuota).
 3. **CERO ASUNCIONES sobre el tipo de financiación (VALIDAR ANTES DE CONCLUIR):**
    - Si el usuario dice *"un préstamo"* sin especificar de qué tipo, **PROHIBIDO** asumir o titular un bloque dando por hecho que se trata de un **préstamo personal**.
    - **PRIMERO pregunta expresamente** qué tipo de préstamo contempla (*¿préstamo personal, hipoteca, pignoración de activos o préstamo familiar/entre particulares?*).
@@ -226,6 +230,19 @@ DOMAIN_SIGNALS: Dict[str, List[Tuple[str, float]]] = {
         ("donde invertir", 3.5),
         ("comprar un piso", 2.5),
         ("aglutinar", 2.0),
+        ("idealista.com", 4.5),
+        ("fotocasa.es", 4.5),
+        ("habitaclia.com", 4.5),
+        ("pisos.com", 4.5),
+        ("yaencontre.com", 4.5),
+        ("analiza este anuncio", 4.2),
+        ("analiza este piso", 4.0),
+        ("precio de compra", 3.2),
+        ("seguro de impago", 3.0),
+        ("seguro de cobro", 3.5),
+        ("alquiler por habitaciones", 2.8),
+        ("precio del alquiler", 2.4),
+        ("renta de alquiler", 2.4),
     ],
     "fiscalidad": [
         ("irpf", 4.0),
@@ -509,8 +526,15 @@ def route_specialists(
     top_id, top_score = ranked[0]
     second_id, second_score = ranked[1]
 
-    # Pregunta o respuesta corta de seguimiento en el mismo caso -> heredar especialistas del caso
-    if not case_switched and prev_specialists and top_score < 3.0:
+    # Pregunta o respuesta corta de seguimiento en el mismo caso (ej. 'op1', 'ambas', 'de donde sacas 1000€')
+    # -> heredar especialistas activos del caso para no caer al fallback legal por error
+    norm_input = _norm(user_input).strip()
+    is_short_followup = (
+        len(norm_input) <= 45
+        or norm_input.startswith(("op1", "op2", "opcion 1", "opcion 2", "ambas", "la primera", "la segunda", "de donde sacas"))
+    )
+    inherit_threshold = 4.0 if is_short_followup else 3.0
+    if not case_switched and prev_specialists and top_score < inherit_threshold:
         active = list(prev_specialists)[:2]
         # Si aun siendo seguimiento añade una señal secundaria clara (ej. usuario responde 'reducción fiscal'), incorporarla
         if top_score >= 2.2 and top_id not in active and len(active) < 2:
