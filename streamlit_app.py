@@ -14,7 +14,7 @@ from logic import (
 )
 from specialists import format_specialists_badge
 from auth import get_auth_manager
-from componentes_ui import hybrid_chat_input
+from componentes_ui import hybrid_chat_input, render_investment_simulator, DEFAULT_SIMULATOR_PARAMS
 
 auth_manager = get_auth_manager()
 
@@ -56,6 +56,10 @@ if "chat_session_id" not in st.session_state:
     st.session_state.chat_session_id = uuid.uuid4().hex[:8]
 if "user_profile_memory" not in st.session_state:
     st.session_state.user_profile_memory = get_default_session_profile()
+if "last_simulator_params" not in st.session_state:
+    st.session_state.last_simulator_params = None
+if "standalone_simulator_params" not in st.session_state:
+    st.session_state.standalone_simulator_params = dict(DEFAULT_SIMULATOR_PARAMS)
 
 # --- Control de Acceso (Login) ---
 if SECURITY_CONFIG.get("enable_auth", False):
@@ -284,7 +288,7 @@ with st.sidebar:
     
     st.divider()
     
-    nav_options = [get_text("nav_assistant"), get_text("nav_dojo")]
+    nav_options = [get_text("nav_assistant"), get_text("nav_simulator"), get_text("nav_dojo")]
     if st.session_state.get("username") == "admin":
         nav_options.append(get_text("nav_roi"))
         nav_options.append(get_text("nav_users"))
@@ -349,6 +353,11 @@ if mode == get_text("nav_assistant"):
                 st.markdown("--- \n**Recursos recomendados:**")
                 for rec in msg["recommendations"]:
                     st.markdown(f"- **[{rec.get('title', 'Recurso')}]({rec.get('url', '#')})**: {rec.get('reason', 'Recomendado para profundizar en el tema.')}")
+
+            # Simulador interactivo en tiempo real (barras deslizantes 0 ms) si el turno analizó una inversión numérica
+            if msg.get("simulator"):
+                with st.expander(get_text("simulator_chat_expander"), expanded=True):
+                    render_investment_simulator(msg["simulator"], height=880)
 
             # Mostrar fuentes web oficiales/externas consultadas por Grounding si existieron
             if msg.get("web_sources"):
@@ -479,11 +488,14 @@ if mode == get_text("nav_assistant"):
             text_response = response_data.get("text", "No he podido generar una respuesta.")
             recommendations = response_data.get("recommendations", [])
             documents = response_data.get("documents", [])
+            simulator_data = response_data.get("simulator")
             web_sources = response_data.get("web_sources", [])
             specialists_badge = response_data.get("specialists_badge", "")
             case_switched = bool(response_data.get("case_switched", False))
             if response_data.get("updated_profile"):
                 st.session_state.user_profile_memory = response_data["updated_profile"]
+            if simulator_data:
+                st.session_state.last_simulator_params = simulator_data
 
         # Registrar turno completo (prompt + respuesta + session_id + arquetipo + especialistas + nombre de doc si aplica) en Google Sheets para QA
         if CLIENT_CONFIG.get("log_prompts", False):
@@ -503,17 +515,63 @@ if mode == get_text("nav_assistant"):
                     especialistas=specialists_badge,
                 )
 
-        # Guardar la respuesta estructurada (texto + especialistas + recomendaciones + documentos PDF + fuentes web) en el historial
+        # Guardar la respuesta estructurada (texto + especialistas + recomendaciones + documentos PDF + simulador + fuentes web) en el historial
         st.session_state.chat_history.append({
             "role": "assistant",
             "content": text_response,
             "recommendations": recommendations,
             "documents": documents,
+            "simulator": simulator_data,
             "web_sources": web_sources,
             "specialists_badge": specialists_badge,
             "case_switched": case_switched,
         })
         st.rerun()
+# --- Pantalla 1B: Simulador Interactivo de Inversión ---
+elif mode == get_text("nav_simulator"):
+    st.header(get_text("simulator_header"))
+    st.caption(get_text("simulator_caption"))
+
+    preset_cols = st.columns(4)
+    with preset_cols[0]:
+        if st.session_state.get("last_simulator_params"):
+            if st.button("💬 Último piso del chat", use_container_width=True):
+                st.session_state.standalone_simulator_params = dict(st.session_state.last_simulator_params)
+        else:
+            st.button("💬 Último piso del chat", disabled=True, use_container_width=True, help="Analiza un piso en el chat para cargarlo aquí con un clic")
+    with preset_cols[1]:
+        if st.button("🎯 Ticket bajo (95k €)", use_container_width=True):
+            st.session_state.standalone_simulator_params = {
+                "titulo": "Escenario Ticket Bajo (ej. Huelva / Talavera / Jaén)",
+                "precio_compra": 95000, "itp_pct": 7.0, "gastos_compra": 2200, "reforma": 8000,
+                "ltv_pct": 70, "interes_pct": 3.2, "plazo_anos": 25,
+                "renta_mensual": 650, "ibi_anual": 180, "comunidad_mensual": 40,
+                "seguro_hogar": 200, "seguro_impago_pct": 4.5, "mantenimiento_pct": 5.0, "vacancia_pct": 5.0,
+                "reduccion_irpf_pct": 50, "tipo_marginal_irpf_pct": 30, "pct_construccion": 70,
+            }
+    with preset_cols[2]:
+        if st.button("🏙️ Patrimonial (230k €)", use_container_width=True):
+            st.session_state.standalone_simulator_params = {
+                "titulo": "Escenario Patrimonial (ej. Madrid / Alcalá / Málaga)",
+                "precio_compra": 230000, "itp_pct": 6.0, "gastos_compra": 2500, "reforma": 0,
+                "ltv_pct": 70, "interes_pct": 3.0, "plazo_anos": 30,
+                "renta_mensual": 1150, "ibi_anual": 220, "comunidad_mensual": 55,
+                "seguro_hogar": 250, "seguro_impago_pct": 4.5, "mantenimiento_pct": 5.0, "vacancia_pct": 5.0,
+                "reduccion_irpf_pct": 50, "tipo_marginal_irpf_pct": 30, "pct_construccion": 70,
+            }
+    with preset_cols[3]:
+        if st.button("💶 Al contado (sin hipoteca)", use_container_width=True):
+            st.session_state.standalone_simulator_params = {
+                "titulo": "Escenario Al Contado (0 % deuda)",
+                "precio_compra": 150000, "itp_pct": 7.0, "gastos_compra": 2500, "reforma": 5000,
+                "ltv_pct": 0, "interes_pct": 3.0, "plazo_anos": 30,
+                "renta_mensual": 850, "ibi_anual": 220, "comunidad_mensual": 45,
+                "seguro_hogar": 220, "seguro_impago_pct": 4.5, "mantenimiento_pct": 5.0, "vacancia_pct": 5.0,
+                "reduccion_irpf_pct": 50, "tipo_marginal_irpf_pct": 30, "pct_construccion": 70,
+            }
+
+    render_investment_simulator(st.session_state.standalone_simulator_params, height=900)
+
 # --- Pantalla 2: Dojo (Quiz) ---
 elif mode == get_text("nav_dojo"):
     st.header(get_text("dojo_header"))

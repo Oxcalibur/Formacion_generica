@@ -1802,6 +1802,43 @@ def _extract_explicit_facts_from_user_text(
     return updated
 
 
+def _extract_simulator_block(raw_text: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """
+    Extrae el bloque oculto [SIMULATOR]{...}[/SIMULATOR] (o [SIMULATOR]{...} sin cierre)
+    para alimentar el simulador interactivo con barras deslizantes, eliminándolo del texto visible.
+    """
+    if not raw_text or "[SIMULATOR]" not in raw_text:
+        return raw_text, None
+
+    sim_data: Optional[Dict[str, Any]] = None
+    # 1. Intentar formato cerrado [SIMULATOR]...[/SIMULATOR]
+    m_closed = re.search(r"(?:```(?:json)?\s*)?\[SIMULATOR\]\s*(.*?)\s*\[/SIMULATOR\](?:\s*```)?", raw_text, flags=re.DOTALL)
+    if m_closed:
+        inner = m_closed.group(1).strip()
+        cleaned = (raw_text[:m_closed.start()].rstrip() + "\n\n" + raw_text[m_closed.end():].lstrip()).strip()
+    else:
+        idx = raw_text.find("[SIMULATOR]")
+        inner = raw_text[idx + len("[SIMULATOR]"):].strip()
+        cleaned = raw_text[:idx].rstrip()
+
+    inner_clean = inner.replace("```json", "").replace("```", "").strip()
+    brace = inner_clean.find("{")
+    if brace != -1:
+        try:
+            obj, end_pos = json.JSONDecoder().raw_decode(inner_clean[brace:])
+            if isinstance(obj, dict) and any(k in obj for k in ("precio_compra", "renta_mensual", "ltv_pct")):
+                sim_data = obj
+            if not m_closed:
+                tail = inner_clean[brace + end_pos:].strip()
+                if tail:
+                    cleaned = f"{cleaned}\n\n{tail}".strip()
+        except Exception as e:
+            print(f"No se pudo parsear [SIMULATOR]: {e}")
+
+    cleaned = re.sub(r'(?:\r?\n\s*`{1,3}\s*)+$', '', cleaned).strip()
+    return cleaned, sim_data
+
+
 def _extract_and_merge_profile(raw_text: str, current_profile: Optional[Dict[str, Any]] = None) -> tuple:
     """
     Extrae el bloque oculto [PROFILE_UPDATE] {...} de la respuesta del modelo,
@@ -2691,6 +2728,8 @@ def get_chat_response(
         
         # Extraer documentos descargables [DOCUMENT title="..."]...[/DOCUMENT] si los hay
         text_part, generated_docs = _extract_generated_documents(text_part)
+        # Extraer bloque interactivo [SIMULATOR]{...}[/SIMULATOR] si el asistente incluyó simulación numérica
+        text_part, simulator_data = _extract_simulator_block(text_part)
         # Sanear cualquier fuga accidental de rutas/archivos internos .md
         text_part = _sanitize_internal_references(text_part)
 
@@ -2698,6 +2737,7 @@ def get_chat_response(
             "text": text_part,
             "recommendations": recommendations,
             "documents": generated_docs,
+            "simulator": simulator_data,
             "web_sources": web_sources,
             "updated_profile": updated_profile,
             "specialists": active_specialists,
@@ -2710,6 +2750,7 @@ def get_chat_response(
             "text": f"⚠️ **Error inesperado:** `{e}`",
             "recommendations": [],
             "documents": [],
+            "simulator": None,
             "web_sources": [],
             "updated_profile": current_profile,
             "specialists": active_specialists,

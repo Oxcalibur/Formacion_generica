@@ -109,6 +109,10 @@ Al final de tu respuesta (incluso en Fase 1), si en este turno el usuario confir
   `[DOCUMENT title="Titulo_Descriptivo_Del_Documento"]`
   ...contenido completo en Markdown limpio...
   `[/DOCUMENT]`
+- **Simulador interactivo embebido (`[SIMULATOR]`):** Cuando entregues un **análisis numérico de inversión inmobiliaria** (compra para alquilar, rentabilidad, ROCE, cash-flow, hipoteca o IRPF de un inmueble concreto con precio y renta — NUNCA en Fase 1 de triaje sin números ni en dudas puramente legales/operativas), incluye al final (antes de `[PROFILE_UPDATE]`, sin backticks) un bloque `[SIMULATOR]` con los parámetros exactos de esa operación para que la app muestre sliders interactivos en tiempo real al usuario:
+  `[SIMULATOR]`
+  `{"titulo": "Simulador: Ciudad/Zona", "precio_compra": 229000, "itp_pct": 6.0, "gastos_compra": 2500, "reforma": 0, "ltv_pct": 70, "interes_pct": 3.0, "plazo_anos": 30, "renta_mensual": 1150, "ibi_anual": 200, "comunidad_mensual": 50, "seguro_hogar": 250, "seguro_impago_pct": 4.5, "mantenimiento_pct": 5.0, "vacancia_pct": 5.0, "reduccion_irpf_pct": 50, "tipo_marginal_irpf_pct": 30, "pct_construccion": 70}`
+  `[/SIMULATOR]`
 - **Vídeos de expertos (`[RESOURCES]`):** NO adjuntes vídeos en Fase 1 (triaje). En Fase 3 o si pide profundizar, puedes añadir `[RESOURCES]` con JSON válido: usa `full_url` de `<biblioteca_local>` si aplica, `"SEARCH_EXTERNAL_POST_OCT2026: <consulta>"` para subidas de renta, prórrogas, alquiler temporal o habitaciones (afectados por RDL 29/2026), y `"SEARCH_EXTERNAL: <consulta>"` para el resto de temas (fiscalidad, hipotecas, inversión, fianzas, obras, LPH). Si no aporta valor o no hay vídeo actualizado, omite `[RESOURCES]`.
 """
 }

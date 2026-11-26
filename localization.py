@@ -7,11 +7,15 @@ TRANSLATIONS = {
         "app_title": "Asesor Inmobiliario Integral",
         "sidebar_title": "Navegación",
         "nav_assistant": "Asesor Inmobiliario Integral",
+        "nav_simulator": "🧮 Simulador de Inversión",
         "nav_dojo": "Dojo Inmobiliario (Ponerse a prueba)",
         "nav_roi": "ROI Dashboard (Admin)",
         "nav_users": "Gestión de Usuarios (Admin)",
         "nav_prompts": "Registro de Prompts (Admin)",
         "language_selector_label": "Idioma",
+        "simulator_header": "🧮 Simulador Interactivo de Inversión Inmobiliaria",
+        "simulator_caption": "Ajusta precio, ITP por CCAA, hipoteca (LTV/TIN/plazo), alquiler, gastos operativos y reducción IRPF con barras en tiempo real para evaluar Rentabilidad, Cash-Flow y ROCE neto.",
+        "simulator_chat_expander": "🧮 Abrir Simulador Interactivo de esta operación (juega con las barras en tiempo real)",
 
         # Login
         "login_title": "⚖️ Acceso al Asesor Inmobiliario Integral",
@@ -83,11 +87,15 @@ TRANSLATIONS = {
         "app_title": "Comprehensive Real Estate Advisor",
         "sidebar_title": "Navigation",
         "nav_assistant": "Real Estate Advisor",
+        "nav_simulator": "🧮 Investment Simulator",
         "nav_dojo": "Real Estate Dojo (Test yourself)",
         "nav_roi": "ROI Dashboard (Admin)",
         "nav_users": "User Management (Admin)",
         "nav_prompts": "Prompt Log (Admin)",
         "language_selector_label": "Language",
+        "simulator_header": "🧮 Interactive Real Estate Investment Simulator",
+        "simulator_caption": "Drag sliders in real time to model purchase price, regional ITP, mortgage (LTV/rate/term), rent, operating costs, and Spanish IRPF to evaluate Yield, Cash-Flow, and Net ROCE.",
+        "simulator_chat_expander": "🧮 Open Interactive Simulator for this deal (drag sliders in real time)",
 
         # Login
         "login_title": "⚖️ Real Estate Advisor Access",
